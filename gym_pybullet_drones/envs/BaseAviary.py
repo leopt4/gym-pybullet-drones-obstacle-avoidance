@@ -138,7 +138,11 @@ class BaseAviary(gym.Env):
                 exit()
             if self.RECORD:
                 # TODO: This doesn't appear to work in general 
-                self.ONBOARD_IMG_PATH = os.path.join(self.OUTPUT_FOLDER, "recording_" + datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
+                # self.ONBOARD_IMG_PATH = os.path.join(self.OUTPUT_FOLDER, "recording_" + datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
+                # os.makedirs(os.path.dirname(self.ONBOARD_IMG_PATH), exist_ok=True)
+
+
+                self.ONBOARD_IMG_PATH = os.path.dirname(os.path.abspath(__file__))+"/../../files/videos/onboard-"+datetime.now().strftime("%m.%d.%Y_%H.%M.%S")+"/"
                 os.makedirs(os.path.dirname(self.ONBOARD_IMG_PATH), exist_ok=True)
         #### Create attributes for dynamics control inputs #########
         self.DYNAMICS_ATTR = dynamics_attributes
@@ -502,13 +506,23 @@ class BaseAviary(gym.Env):
 
         """
         if self.RECORD and self.GUI:
+            # self.VIDEO_ID = p.startStateLogging(loggingType=p.STATE_LOGGING_VIDEO_MP4,
+            #                                     fileName=os.path.join(self.OUTPUT_FOLDER, "recording_" + datetime.now().strftime("%m.%d.%Y_%H.%M.%S"), "output.mp4"),
+            #                                     physicsClientId=self.CLIENT
+            #                                     )
+
             self.VIDEO_ID = p.startStateLogging(loggingType=p.STATE_LOGGING_VIDEO_MP4,
-                                                fileName=os.path.join(self.OUTPUT_FOLDER, "recording_" + datetime.now().strftime("%m.%d.%Y_%H.%M.%S"), "output.mp4"),
+                                                fileName=os.path.dirname(os.path.abspath(__file__))+"/../../files/videos/video-"+datetime.now().strftime("%m.%d.%Y_%H.%M.%S")+".mp4",
                                                 physicsClientId=self.CLIENT
                                                 )
+            
         if self.RECORD and not self.GUI:
+            # self.FRAME_NUM = 0
+            # self.IMG_PATH = os.path.join(self.OUTPUT_FOLDER, "recording_" + datetime.now().strftime("%m.%d.%Y_%H.%M.%S"), '')
+            # os.makedirs(os.path.dirname(self.IMG_PATH), exist_ok=True)
+
             self.FRAME_NUM = 0
-            self.IMG_PATH = os.path.join(self.OUTPUT_FOLDER, "recording_" + datetime.now().strftime("%m.%d.%Y_%H.%M.%S"), '')
+            self.IMG_PATH = os.path.dirname(os.path.abspath(__file__))+"/../../files/videos/video-"+datetime.now().strftime("%m.%d.%Y_%H.%M.%S")+"/"
             os.makedirs(os.path.dirname(self.IMG_PATH), exist_ok=True)
     
     ################################################################################
@@ -593,6 +607,41 @@ class BaseAviary(gym.Env):
 
     ################################################################################
 
+    # def _exportImage(self,
+    #                  img_type: ImageType,
+    #                  img_input,
+    #                  path: str,
+    #                  frame_num: int=0
+    #                  ):
+    #     """Returns camera captures from the n-th drone POV.
+
+    #     Parameters
+    #     ----------
+    #     img_type : ImageType
+    #         The image type: RGB(A), depth, segmentation, or B&W (from RGB).
+    #     img_input : ndarray
+    #         (h, w, 4)-shaped array of uint8's for RBG(A) or B&W images.
+    #         (h, w)-shaped array of uint8's for depth or segmentation images.
+    #     path : str
+    #         Path where to save the output as PNG.
+    #     fram_num: int, optional
+    #         Frame number to append to the PNG's filename.
+
+    #     """
+    #     if img_type == ImageType.RGB:
+    #         (Image.fromarray(img_input.astype('uint8'), 'RGBA')).save(os.path.join(path,"frame_"+str(frame_num)+".png"))
+    #     elif img_type == ImageType.DEP:
+    #         temp = ((img_input-np.min(img_input)) * 255 / (np.max(img_input)-np.min(img_input))).astype('uint8')
+    #     elif img_type == ImageType.SEG:
+    #         temp = ((img_input-np.min(img_input)) * 255 / (np.max(img_input)-np.min(img_input))).astype('uint8')
+    #     elif img_type == ImageType.BW:
+    #         temp = (np.sum(img_input[:, :, 0:2], axis=2) / 3).astype('uint8')
+    #     else:
+    #         print("[ERROR] in BaseAviary._exportImage(), unknown ImageType")
+    #         exit()
+    #     if img_type != ImageType.RGB:
+    #         (Image.fromarray(temp)).save(os.path.join(path,"frame_"+str(frame_num)+".png"))
+
     def _exportImage(self,
                      img_type: ImageType,
                      img_input,
@@ -615,7 +664,7 @@ class BaseAviary(gym.Env):
 
         """
         if img_type == ImageType.RGB:
-            (Image.fromarray(img_input.astype('uint8'), 'RGBA')).save(os.path.join(path,"frame_"+str(frame_num)+".png"))
+            (Image.fromarray(img_input.astype('uint8'), 'RGBA')).save(path+"frame_"+str(frame_num)+".png")
         elif img_type == ImageType.DEP:
             temp = ((img_input-np.min(img_input)) * 255 / (np.max(img_input)-np.min(img_input))).astype('uint8')
         elif img_type == ImageType.SEG:
@@ -626,8 +675,8 @@ class BaseAviary(gym.Env):
             print("[ERROR] in BaseAviary._exportImage(), unknown ImageType")
             exit()
         if img_type != ImageType.RGB:
-            (Image.fromarray(temp)).save(os.path.join(path,"frame_"+str(frame_num)+".png"))
-
+            (Image.fromarray(temp)).save(path+"frame_"+str(frame_num)+".png")
+            
     ################################################################################
 
     def _getAdjacencyMatrix(self):
