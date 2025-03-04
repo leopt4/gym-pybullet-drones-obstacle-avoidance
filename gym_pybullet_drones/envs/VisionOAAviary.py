@@ -1,11 +1,13 @@
 import os
 import numpy as np
+import pybullet as p
 from gym import spaces
 
-from gym_pybullet_drones.envs.BaseAviary import BaseAviary
-from gym_pybullet_drones.utils.enums import DroneModel, Physics, ImageType
+from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics, ImageType, BaseAviary
 
-class VisionAviary(BaseAviary):
+import json
+
+class VisionOAAviary(BaseAviary):
     """Multi-drone environment class for control applications using vision."""
 
     ################################################################################
@@ -17,13 +19,12 @@ class VisionAviary(BaseAviary):
                  initial_xyzs=None,
                  initial_rpys=None,
                  physics: Physics=Physics.PYB,
-                 freq: int=240,
+                 ctrl_freq: int=240,
                  aggregate_phy_steps: int=1,
                  gui=False,
                  record=False,
-                 obstacles=False,
-                 user_debug_gui=True,
-                 output_folder='results'
+                 obstacles=True,
+                 user_debug_gui=True
                  ):
         """Initialization of an aviary environment for control applications using vision.
 
@@ -64,17 +65,56 @@ class VisionAviary(BaseAviary):
                          initial_xyzs=initial_xyzs,
                          initial_rpys=initial_rpys,
                          physics=physics,
-                         freq=freq,
                          aggregate_phy_steps=aggregate_phy_steps,
                          gui=gui,
                          record=record,
                          obstacles=obstacles,
                          user_debug_gui=user_debug_gui,
-                         vision_attributes=True,
-                         output_folder=output_folder
+                         vision_attributes=True
                          )
 
-    
+    ################################################################################
+
+    # def reset(self):
+    #     self.truncated = False
+    #     self.done = False
+    #     for rwd in self.reward_components:
+    #         rwd.reset()
+    #     for term in self.term_components:
+    #         term.reset()
+    #     obs = super().reset()
+    #     # setting this to false here to allow one time allocations of reward and term values to not be repeated
+    #     self.init = False
+
+    #     return obs
+
+    ################################################################################
+
+    def _addObstacles(self):
+        """Add obstacles to the environment.
+
+        These obstacles are loaded from standard URDF files included in Bullet.
+
+        """
+        filename = "../../tests/env_create/env_1.0_5_0.7_63.json"
+        try:
+            with open(filename, "r") as f:
+                positions = json.load(f)
+            print(f"Loaded {len(positions)} positions from {filename}")
+        except FileNotFoundError:
+            print(f"File {filename} not found.")
+            return []
+
+        for i in range(len(positions)):
+            p.loadURDF(
+                "cylinder.urdf",
+                positions[i],
+                p.getQuaternionFromEuler([0, 0, 0]),
+                physicsClientId=self.CLIENT,
+                useFixedBase=True,
+                globalScaling=1,
+            )
+
     ################################################################################
     
     def _actionSpace(self):
@@ -157,11 +197,16 @@ class VisionAviary(BaseAviary):
                 self.rgb[i], self.dep[i], self.seg[i] = self._getDroneImages(i)
                 #### Printing observation to PNG frames example ############
                 if self.RECORD:
-                    self._exportImage(img_type=ImageType.RGB, # ImageType.BW, ImageType.DEP, ImageType.SEG
-                                      img_input=self.rgb[i],
+                    # self._exportImage(img_type=ImageType.RGB, # ImageType.BW, ImageType.DEP, ImageType.SEG
+                    #                   img_input=self.rgb[i],
+                    #                   path=self.ONBOARD_IMG_PATH+"drone_"+str(i),
+                    #                   frame_num=int(self.step_counter/self.IMG_CAPTURE_FREQ)
+                    #                   )
+                    self._exportImage(img_type=ImageType.SEG, # ImageType.BW, ImageType.DEP, ImageType.SEG
+                                      img_input=self.seg[i],
                                       path=self.ONBOARD_IMG_PATH+"drone_"+str(i),
                                       frame_num=int(self.step_counter/self.IMG_CAPTURE_FREQ)
-                                      )                  
+                                      )
             obs[str(i)] = {"state": self._getDroneStateVector(i), \
                            "neighbors": adjacency_mat[i,:], \
                            "rgb": self.rgb[i], \
