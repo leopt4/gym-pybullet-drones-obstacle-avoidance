@@ -105,15 +105,19 @@ class VisionOAAviary(BaseAviary):
             print(f"File {filename} not found.")
             return []
 
-        for i in range(len(positions)):
-            p.loadURDF(
-                "cylinder.urdf",
-                positions[i],
-                p.getQuaternionFromEuler([0, 0, 0]),
-                physicsClientId=self.CLIENT,
-                useFixedBase=True,
-                globalScaling=1,
-            )
+        p.loadURDF("cylinders_map.urdf",
+                   physicsClientId=self.CLIENT
+                   )
+        
+        # for i in range(len(positions)):
+        #     p.loadURDF(
+        #         "cylinder.urdf",
+        #         positions[i],
+        #         p.getQuaternionFromEuler([0, 0, 0]),
+        #         physicsClientId=self.CLIENT,
+        #         useFixedBase=True,
+        #         globalScaling=1,
+        #     )
 
     ################################################################################
     
