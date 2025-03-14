@@ -132,7 +132,7 @@ class BaseAviary(gym.Env):
             os.makedirs(os.path.dirname(self.ONBOARD_IMG_PATH), exist_ok=True)
         self.VISION_ATTR = vision_attributes
         if self.VISION_ATTR:
-            self.IMG_RES = np.array([64, 48])
+            self.IMG_RES = np.array([100, 80])
             self.IMG_FRAME_PER_SEC = 24
             self.IMG_CAPTURE_FREQ = int(self.PYB_FREQ/self.IMG_FRAME_PER_SEC)
             self.rgb = np.zeros(((self.NUM_DRONES, self.IMG_RES[1], self.IMG_RES[0], 4)))
@@ -140,7 +140,7 @@ class BaseAviary(gym.Env):
             self.seg = np.zeros(((self.NUM_DRONES, self.IMG_RES[1], self.IMG_RES[0])))
             if self.IMG_CAPTURE_FREQ%self.PYB_STEPS_PER_CTRL != 0:
                 print("[ERROR] in BaseAviary.__init__(), PyBullet and control frequencies incompatible with the desired video capture frame rate ({:f}Hz)".format(self.IMG_FRAME_PER_SEC))
-                exit()
+                # exit()
             if self.RECORD:
                 for i in range(self.NUM_DRONES):
                     os.makedirs(os.path.dirname(self.ONBOARD_IMG_PATH+"/drone_"+str(i)+"/"), exist_ok=True)
@@ -252,6 +252,10 @@ class BaseAviary(gym.Env):
         #### Return the initial observation ########################
         initial_obs = self._computeObs()
         initial_info = self._computeInfo()
+        
+        alpha = np.random.uniform(0, 2 * np.pi)
+        self.TARGET_POS     = np.array([5.0*np.cos(alpha), 5.0*np.sin(alpha), 1.0])
+
         return initial_obs, initial_info
     
     ################################################################################

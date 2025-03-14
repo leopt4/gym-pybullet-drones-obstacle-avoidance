@@ -96,16 +96,16 @@ class VisionOAAviary(BaseRLAviary):
         ## Target
         self.TARGET_RADIUS  = 5.0
         alpha = np.random.uniform(0, 2 * np.pi)
-        alpha = -np.pi/2
+        alpha = -3*np.pi/4
         self.TARGET_POS     = np.array([5.0*np.cos(alpha), 5.0*np.sin(alpha), 1.0])
-        self.TARGET_ZONE    = 0.05
+        self.TARGET_ZONE    = 0.2
         ## Reward parameters
         # Sparse rewards
         self.GOAL_REACHING_REWARD   = 100
         self.COLLISION_PENALTY      = -5
         # Distance Error Penalty
         self.SCALE_DIS      = 1.0
-        self.SCALE_HEIGHT   = 0.3
+        self.SCALE_HEIGHT   = 0.05
         # Collision Proximity Penalty
         self.SAFETY_DISTANCE    = self.OBSTACLES_RADIUS + 0.15
         self.COLLISION_DISTANCE = self.OBSTACLES_RADIUS + 0.08
@@ -402,11 +402,17 @@ class VisionOAAviary(BaseRLAviary):
             state = self._getDroneStateVector(k)
             target_v = action[k, :]
             #### Normalize the first 3 components of the target velocity
-            if np.linalg.norm(target_v[0:2]) != 0:
+            if np.linalg.norm(target_v[0:2]) > self.SPEED_LIMIT:
                 v_unit_vector = target_v[0:2] / np.linalg.norm(target_v[0:2])
+                vel = np.array([v_unit_vector[0], v_unit_vector[1], 0]) * self.SPEED_LIMIT
+
             else:
-                v_unit_vector = np.zeros(2)
-            vel = np.array([v_unit_vector[0], v_unit_vector[1], 0])
+                vel = np.array([target_v[0], target_v[1], 0])
+            # if np.linalg.norm(target_v[0:2]) != 0:
+            #     v_unit_vector = target_v[0:2] / np.linalg.norm(target_v[0:2])
+            # else:
+            #     v_unit_vector = np.zeros(2)
+            # vel = np.array([v_unit_vector[0], v_unit_vector[1], 0])
             temp, _, _ = self.ctrl[k].computeControl(control_timestep=self.CTRL_TIMESTEP,
                                                     cur_pos=state[0:3],
                                                     cur_quat=state[3:7],
@@ -414,7 +420,7 @@ class VisionOAAviary(BaseRLAviary):
                                                     cur_ang_vel=state[13:16],
                                                     target_pos=state[0:3], # same as the current position
                                                     # target_rpy=np.array([0,0,state[9]]), # keep current yaw
-                                                    target_vel=self.SPEED_LIMIT * vel # target the desired velocity vector
+                                                    target_vel= vel # target the desired velocity vector
                                                     # target_rpy_rates=np.array([0,0,target_v[3]])
                                                     )
             rpm[k,:] = temp
@@ -457,7 +463,7 @@ class VisionOAAviary(BaseRLAviary):
 
         # Compute continuous rewards
         r_e = (d_t_minus_1*0 - d_t) #/ self.TARGET_RADIUS    # Distance differential reward
-        p_p = min(max(d_l / self.SCALE_DIS, self.CLIP_ZERO), self.CLIP_MAX) + 0 * min(max((pos[2] - target_pos[2]) / self.SCALE_HEIGHT, self.CLIP_MIN), self.CLIP_MAX)  # Distance and height penalty
+        p_p = min(max(d_l / self.SCALE_DIS, self.CLIP_ZERO), self.CLIP_MAX) + 0 * min(max(np.abs(target_pos[2] - pos[2]) / self.SCALE_HEIGHT, self.CLIP_MIN), self.CLIP_MAX)  # Distance and height penalty
         p_o = (self.CLIP_MAX - min(max((d_o - d_c) / (d_s - d_c), self.CLIP_ZERO), self.CLIP_MAX)) if d_o < d_s else 0           # Collision proximity penalty
         
         # Compute sparse rewards
@@ -470,7 +476,7 @@ class VisionOAAviary(BaseRLAviary):
             sparse_reward = -100
         # Compute final reward
         reward = min(max(self.ETA_R * r_e - self.ETA_P * p_p - 0 * self.ETA_O * p_o, self.CLIP_MIN), self.CLIP_MAX) + sparse_reward
-        
+        # print("\Re: ", round(self.ETA_R * r_e,3), "\Rp:", round(-self.ETA_P * p_p, 3), "\Spare:", sparse_reward)
         # Update previous distance for next step
         self.prev_distance = d_t
         

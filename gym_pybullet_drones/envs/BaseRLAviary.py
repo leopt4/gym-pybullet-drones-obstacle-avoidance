@@ -25,7 +25,8 @@ class BaseRLAviary(BaseAviary):
                  gui=False,
                  record=False,
                  obs: ObservationType=ObservationType.KIN,
-                 act: ActionType=ActionType.RPM
+                 act: ActionType=ActionType.RPM,
+                 vision_attributes=False
                  ):
         """Initialization of a generic single and multi-agent RL environment.
 
@@ -66,7 +67,7 @@ class BaseRLAviary(BaseAviary):
         self.ACTION_BUFFER_SIZE = int(ctrl_freq//2)
         self.action_buffer = deque(maxlen=self.ACTION_BUFFER_SIZE)
         ####
-        vision_attributes = True if obs == ObservationType.RGB else False
+        # vision_attributes = True if obs == ObservationType.RGB else False
         self.OBS_TYPE = obs
         self.ACT_TYPE = act
         #### Create integrated controllers #########################
@@ -86,7 +87,7 @@ class BaseRLAviary(BaseAviary):
                          ctrl_freq=ctrl_freq,
                          gui=gui,
                          record=record, 
-                         obstacles=True, # Add obstacles for RGB observations and/or FlyThruGate
+                         obstacles=False, # Add obstacles for RGB observations and/or FlyThruGate
                          user_debug_gui=False, # Remove of RPM sliders from all single agent learning aviaries
                          vision_attributes=vision_attributes,
                          )
@@ -139,7 +140,7 @@ class BaseRLAviary(BaseAviary):
 
         """
         if self.ACT_TYPE in [ActionType.RPM, ActionType.VEL]:
-            size = 4
+            size = 2
         elif self.ACT_TYPE==ActionType.PID:
             size = 3
         elif self.ACT_TYPE in [ActionType.ONE_D_RPM, ActionType.ONE_D_PID]:
@@ -316,6 +317,10 @@ class BaseRLAviary(BaseAviary):
             #### Add action buffer to observation #######################
             for i in range(self.ACTION_BUFFER_SIZE):
                 ret = np.hstack([ret, np.array([self.action_buffer[i][j, :] for j in range(self.NUM_DRONES)])])
+            # print("_____________________________________________________________________________________")
+            # print(self.action_buffer[0][0, :])
+            # print("Obs Shape: ", np.shape(ret))
+            # print(ret)
             return ret
             ############################################################
         else:
