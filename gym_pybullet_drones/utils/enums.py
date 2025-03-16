@@ -46,3 +46,4 @@ class ObservationType(Enum):
     """Observation type enumeration class."""
     KIN = "kin"     # Kinematic information (pose, linear and angular velocities)
     RGB = "rgb"     # RGB camera capture in each drone's POV
+    OB = "ob"       # Depth camera capture in each drone's POV and Kinematic information (Distance to target, Linear velocities, Yaw rate and Diff Yaw)
