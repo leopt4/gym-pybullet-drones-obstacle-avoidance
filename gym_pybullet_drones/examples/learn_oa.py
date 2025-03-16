@@ -63,13 +63,6 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     #### Check the environment's spaces ########################
     print('[INFO] Action space:', train_env.action_space)
     print('[INFO] Observation space:', train_env.observation_space)
-
-    # Define a custom policy that integrates CustomCombinedExtractor
-    policy_kwargs = dict(
-        features_extractor_class=ObstacleAvoidanceExtractor,
-        # features_extractor_kwargs=dict(features_dim=32),  # Match the output dim of your extractor
-    )
-    #### Train the model #######################################
     model = PPO(
         "MlpPolicy",
         train_env,
@@ -77,9 +70,33 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         verbose=1,
         tensorboard_log=filename + "/tb/",
     )
+    # Define a custom policy that integrates CustomCombinedExtractor
+    policy_kwargs = dict(
+        features_extractor_class=ObstacleAvoidanceExtractor,
+        # features_extractor_kwargs=dict(features_dim=32),  # Match the output dim of your extractor
+    )
+    #### Train the model #######################################
+    # model = PPO(
+    #     "MlpPolicy",
+    #     train_env,
+    #     # policy_kwargs=policy_kwargs,
+    #     verbose=1,
+    #     tensorboard_log=filename + "/tb/",
+    # )
+
+    # if os.path.isfile(filename+'/best_model_v6.zip'):
+    #     path = filename+'/best_model_v6.zip'
+    # else:
+    #     print("[ERROR]: no model under the specified path", filename)
+
+    # model = PPO.load(path)
+    # # model.policy = 
+    # model.env = train_env
+    # model.verbose = 1
+    # model.tensorboard_log = filename + "/tb/"
 
     #### Target cumulative rewards (problem-dependent) ##########
-    target_reward = 600.
+    target_reward = 50000.
     callback_on_best = StopTrainingOnRewardThreshold(reward_threshold=target_reward,
                                                      verbose=1)
     eval_callback = EvalCallback(eval_env,
@@ -87,10 +104,10 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                                  verbose=1,
                                  best_model_save_path=filename+'/',
                                  log_path=filename+'/',
-                                 eval_freq=int(1000),
+                                 eval_freq=int(10000),
                                  deterministic=True,
                                  render=False)
-    model.learn(total_timesteps=int(1e5) if local else int(1e2), # shorter training in GitHub Actions pytest
+    model.learn(total_timesteps=int(2e6) if local else int(1e2), # shorter training in GitHub Actions pytest
                 callback=eval_callback,
                 log_interval=100)
 

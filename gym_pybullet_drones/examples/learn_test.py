@@ -71,10 +71,10 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     ############################################################
     ############################################################
     ############################################################
-    filename = os.path.join(output_folder, 'save-test')
+    filename = os.path.join(output_folder, 'save-test-16-cylinder-8-directions')
 
-    if os.path.isfile(filename+'/best_model.zip'):
-        path = filename+'/best_model.zip'
+    if os.path.isfile(filename+'/best_model_v5.zip'):
+        path = filename+'/best_model_v5.zip'
     else:
         print("[ERROR]: no model under the specified path", filename)
     model = PPO.load(path)
@@ -105,15 +105,16 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     obs, info = test_env.reset(seed=42, options={})
     start = time.time()
     action_fix = np.zeros((1,4))
-    for i in range((test_env.EPISODE_LEN_SEC+15)*test_env.CTRL_FREQ):
+    for i in range((test_env.EPISODE_LEN_SEC+200)*test_env.CTRL_FREQ):
         action, _states = model.predict(obs,
                                         deterministic=True
                                         )
-        action_fix[0, :] = [1, 0, 0, 0]
+        action_fix[0, :] = [0.1, 0, 0, np.pi/2]
         obs, reward, terminated, truncated, info = test_env.step(action)
         # obs2 = obs.squeeze()
         # act2 = action_fix.squeeze()
         # print("\Obs:", obs)
+        # print("\Action: ", action)
         # print("\tReward:", reward, "\tTerminated:", terminated, "\tTruncated:", truncated)
         # if DEFAULT_OBS == ObservationType.KIN:
         #     if not multiagent:
@@ -140,8 +141,12 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         # test_env.render()
         # print(terminated)
         sync(i, start, test_env.CTRL_TIMESTEP)
-        if truncated or terminated:
-            test_env.close()
+        if terminated:
+            print("-----------------------------Terminated---------------------------")
+        elif truncated:
+            print("-----------------------------Truncated---------------------------")
+
+               # test_env.close()
     #         obs = test_env.reset(seed=42, options={})
     # test_env.close()
 

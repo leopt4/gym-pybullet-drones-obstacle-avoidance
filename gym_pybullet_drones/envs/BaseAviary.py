@@ -14,6 +14,8 @@ import pybullet_data
 import gymnasium as gym
 from gym_pybullet_drones.utils.enums import DroneModel, Physics, ImageType
 
+import random
+
 
 class BaseAviary(gym.Env):
     """Base class for "drone aviary" Gym environments."""
@@ -253,8 +255,12 @@ class BaseAviary(gym.Env):
         initial_obs = self._computeObs()
         initial_info = self._computeInfo()
         
-        alpha = np.random.uniform(0, 2 * np.pi)
-        self.TARGET_POS     = np.array([5.0*np.cos(alpha), 5.0*np.sin(alpha), 1.0])
+        # alpha = np.random.uniform(0, 2 * np.pi)
+        alpha_list = [0, np.pi/4, 2*np.pi/4, 3*np.pi/4, 4*np.pi/4, 5*np.pi/4, 6*np.pi/4, 7*np.pi/4]
+        # alpha_list = [1*np.pi/4, 7*np.pi/4]
+        alpha = random.choice(alpha_list)
+        # alpha = 2*np.pi/4
+        self.TARGET_POS     = np.array([self.TARGET_RADIUS*np.cos(alpha), self.TARGET_RADIUS*np.sin(alpha), 1.0])
 
         return initial_obs, initial_info
     
@@ -352,7 +358,9 @@ class BaseAviary(gym.Env):
             #### Step the simulation using the desired physics update ##
             for i in range (self.NUM_DRONES):
                 if self.PHYSICS == Physics.PYB:
+                    # print("\Action 1: ", clipped_action)
                     self._physics(clipped_action[i, :], i)
+                    # print("\Action 2: ", clipped_action)
                 elif self.PHYSICS == Physics.DYN:
                     self._dynamics(clipped_action[i, :], i)
                 elif self.PHYSICS == Physics.PYB_GND:

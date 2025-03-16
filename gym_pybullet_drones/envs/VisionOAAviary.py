@@ -8,6 +8,8 @@ from gym_pybullet_drones.envs.BaseRLAviary import BaseRLAviary
 from gym_pybullet_drones.utils.enums import DroneModel, Physics, ActionType, ObservationType
 from gym_pybullet_drones.control.DSLPIDControl import DSLPIDControl
 
+import random
+
 import json
 
 class VisionOAAviary(BaseRLAviary):
@@ -77,7 +79,7 @@ class VisionOAAviary(BaseRLAviary):
             self.ctrl = [DSLPIDControl(drone_model=DroneModel.CF2X) for i in range(num_drones)]
 
         ## Obstacle 
-        filename = "gym_pybullet_drones/obstacles/env_1.0_5_0.7_63.json"
+        filename = "gym_pybullet_drones/obstacles/env_3_cylinders.json"
         try:
             with open(filename, "r") as f:
                 self.OBSTACLES_POSITIONS = json.load(f)
@@ -94,29 +96,33 @@ class VisionOAAviary(BaseRLAviary):
         ## Start Point
         self.START_POS      = np.array([0.0, 0.0, 1.0]) 
         ## Target
-        self.TARGET_RADIUS  = 5.0
+        self.TARGET_RADIUS  = 4.5
         alpha = np.random.uniform(0, 2 * np.pi)
-        alpha = -3*np.pi/4
-        self.TARGET_POS     = np.array([5.0*np.cos(alpha), 5.0*np.sin(alpha), 1.0])
-        self.TARGET_ZONE    = 0.2
+        alpha_list = [0, np.pi/4, 2*np.pi/4, 3*np.pi/4, 4*np.pi/4, 5*np.pi/4, 6*np.pi/4, 7*np.pi/4]
+        # alpha_list = [1*np.pi/4, 7*np.pi/4]
+        alpha = random.choice(alpha_list)
+        # alpha = np.pi/2
+        self.TARGET_POS     = np.array([self.TARGET_RADIUS*np.cos(alpha), self.TARGET_RADIUS*np.sin(alpha), 1.0])
+        self.TARGET_ZONE    = 0.3
         ## Reward parameters
         # Sparse rewards
         self.GOAL_REACHING_REWARD   = 100
-        self.COLLISION_PENALTY      = -5
+        self.COLLISION_PENALTY      = -40
+        self.OUTMAP_PENALTY         = -50
         # Distance Error Penalty
-        self.SCALE_DIS      = 1.0
+        self.SCALE_DIS      = 0.5
         self.SCALE_HEIGHT   = 0.05
         # Collision Proximity Penalty
-        self.SAFETY_DISTANCE    = self.OBSTACLES_RADIUS + 0.15
-        self.COLLISION_DISTANCE = self.OBSTACLES_RADIUS + 0.08
+        self.SAFETY_DISTANCE    = 0.30
+        self.COLLISION_DISTANCE = 0.07
         # Clip
         self.CLIP_ZERO  = 0
-        self.CLIP_MIN   = -5
-        self.CLIP_MAX   = 5
+        self.CLIP_MIN   = -10
+        self.CLIP_MAX   = 10
         # Scaling factors
         self.ETA_R = 0.8
-        self.ETA_P = 0.3
-        self.ETA_O = 1.0
+        self.ETA_P = 0.5
+        self.ETA_O = 0.0
 
         ##
         self.prev_distance  = self.TARGET_RADIUS
@@ -311,8 +317,11 @@ class VisionOAAviary(BaseRLAviary):
         # obs_lower_bound = np.array([[lo,lo,0, lo,lo,lo,lo,lo] for i in range(self.NUM_DRONES)])
         # obs_upper_bound = np.array([[hi,hi,hi,hi,hi,hi,hi,hi] for i in range(self.NUM_DRONES)])
 
-        obs_lower_bound = np.array([[lo,lo,lo,lo] for i in range(self.NUM_DRONES)])
-        obs_upper_bound = np.array([[hi,hi,hi,hi] for i in range(self.NUM_DRONES)])
+        obs_lower_bound = np.array([[lo,lo,lo,lo,lo,lo,lo,lo] for i in range(self.NUM_DRONES)])
+        obs_upper_bound = np.array([[hi,hi,hi,hi,hi,hi,hi,hi] for i in range(self.NUM_DRONES)])
+
+        # obs_lower_bound = np.array([[lo,lo,lo,lo] for i in range(self.NUM_DRONES)])
+        # obs_upper_bound = np.array([[hi,hi,hi,hi] for i in range(self.NUM_DRONES)])
 
         state_space = spaces.Box(low=obs_lower_bound, high=obs_upper_bound, dtype=np.float32)
 
@@ -351,8 +360,10 @@ class VisionOAAviary(BaseRLAviary):
 
         obs_dict["image"] = np.array([self.dep[i] for i in range(self.NUM_DRONES)]).astype('float32')
 
+        # Compute Obstacle
+        obs_obs, obs_dis = self._getClosestObstaclePosition()
         # Capture drone states
-        obs_states = np.zeros((self.NUM_DRONES, 4))  # [xyz position, xyz velocity, yaw rate, yaw diff]
+        obs_states = np.zeros((self.NUM_DRONES, 8))  # [xyz position, xyz velocity, yaw rate, yaw diff]
         for i in range(self.NUM_DRONES):
             state = self._getDroneStateVector(i)
             # Compute distance from the drone to target
@@ -368,9 +379,16 @@ class VisionOAAviary(BaseRLAviary):
             # Compute yaw difference and normalize to [-pi, pi]
             yaw_diff = np.arctan2(np.sin(target_yaw - yaw), np.cos(target_yaw - yaw))
 
+            #
+            dis_norm = np.linalg.norm(dis[0:2])/self.TARGET_RADIUS
+            obs_dis = obs_dis / (self.TARGET_RADIUS/2)
+            obs_obs[0:2] = obs_obs[0:2] / (self.TARGET_RADIUS/2)
+            vel[0:2] = vel[0:2] / self.SPEED_LIMIT
+            dis[0:2] = dis[0:2] / (self.TARGET_RADIUS/2)
             # obs_states[i, :] = np.hstack([dis, vel, yaw_rate, yaw_diff]).reshape(8,)
-            obs_states[i, :] = np.hstack([dis[0:2], vel[0:2]]).reshape(4,)
-
+            obs_states[i, :] = np.hstack([dis[0:2], dis_norm, vel[0:2], obs_obs[0:2], obs_dis]).reshape(8,)
+            # obs_states[i, :] = np.hstack([dis[0:2], vel[0:2]]).reshape(4,)
+        
         obs_dict["states"] = np.array(obs_states).astype('float32')
 
         return obs_states
@@ -405,7 +423,7 @@ class VisionOAAviary(BaseRLAviary):
             if np.linalg.norm(target_v[0:2]) > self.SPEED_LIMIT:
                 v_unit_vector = target_v[0:2] / np.linalg.norm(target_v[0:2])
                 vel = np.array([v_unit_vector[0], v_unit_vector[1], 0]) * self.SPEED_LIMIT
-
+                # print("------------------------------over vel limit------------------------------------")
             else:
                 vel = np.array([target_v[0], target_v[1], 0])
             # if np.linalg.norm(target_v[0:2]) != 0:
@@ -419,9 +437,9 @@ class VisionOAAviary(BaseRLAviary):
                                                     cur_vel=state[10:13],
                                                     cur_ang_vel=state[13:16],
                                                     target_pos=state[0:3], # same as the current position
-                                                    # target_rpy=np.array([0,0,state[9]]), # keep current yaw
+                                                    # target_rpy=np.array([0,0,state[9]+np.pi/100]), # keep current yaw
                                                     target_vel= vel # target the desired velocity vector
-                                                    # target_rpy_rates=np.array([0,0,target_v[3]])
+                                                    # target_rpy=np.array([0,0,target_v[3]])
                                                     )
             rpm[k,:] = temp
         return rpm
@@ -465,18 +483,31 @@ class VisionOAAviary(BaseRLAviary):
         r_e = (d_t_minus_1*0 - d_t) #/ self.TARGET_RADIUS    # Distance differential reward
         p_p = min(max(d_l / self.SCALE_DIS, self.CLIP_ZERO), self.CLIP_MAX) + 0 * min(max(np.abs(target_pos[2] - pos[2]) / self.SCALE_HEIGHT, self.CLIP_MIN), self.CLIP_MAX)  # Distance and height penalty
         p_o = (self.CLIP_MAX - min(max((d_o - d_c) / (d_s - d_c), self.CLIP_ZERO), self.CLIP_MAX)) if d_o < d_s else 0           # Collision proximity penalty
-        
+
         # Compute sparse rewards
         sparse_reward = 0
         if d_t < self.TARGET_ZONE:  # Goal reaching reward
             sparse_reward = self.GOAL_REACHING_REWARD
-        # elif d_o < d_c:             # Collision penalty
-        #     sparse_reward = self.COLLISION_PENALTY
-        if state[2] < 0.5:
-            sparse_reward = -100
+            # print("-------------------------------------Reach Goal------------------------------------")
+        elif d_o < d_c+0.02:             # Collision penalty
+            sparse_reward = self.COLLISION_PENALTY
+            # print("-------------------------------------Collision-------------------------------------")
+        elif d_o <= d_s:
+            a = self.COLLISION_PENALTY / (d_c**2 - d_s**2 - 2*d_s*(d_c-d_s))
+            b = -2*a*d_s
+            c = -a*d_s**2 + 2*a*d_s**2
+
+            sparse_reward = a*d_o**2 + b*d_o + c
+            # sparse_reward = self.COLLISION_PENALTY * (d_o - d_s) / (d_c - d_s)
+            # print("---------------------------------------Unsafe--------------------------------------")
+        elif np.linalg.norm(self.TARGET_POS[0:2] - state[0:2]) > (self.TARGET_RADIUS + 2.0):
+            sparse_reward = self.OUTMAP_PENALTY
+            # print("---------------------------------------OutMap--------------------------------------")
+        elif state[2] < 0.5:
+            sparse_reward = -300
         # Compute final reward
-        reward = min(max(self.ETA_R * r_e - self.ETA_P * p_p - 0 * self.ETA_O * p_o, self.CLIP_MIN), self.CLIP_MAX) + sparse_reward
-        # print("\Re: ", round(self.ETA_R * r_e,3), "\Rp:", round(-self.ETA_P * p_p, 3), "\Spare:", sparse_reward)
+        reward = min(max(self.ETA_R * r_e - self.ETA_P * p_p - self.ETA_O * p_o, self.CLIP_MIN), self.CLIP_MAX) + sparse_reward
+        # print("\Re: ", round(self.ETA_R * r_e,3), "\Rp: ", round(-self.ETA_P * p_p, 3), "\Ro: ", -self.ETA_O * p_o, "\Spare:", sparse_reward)
         # Update previous distance for next step
         self.prev_distance = d_t
         
@@ -494,7 +525,8 @@ class VisionOAAviary(BaseRLAviary):
 
         """
         state = self._getDroneStateVector(0)
-        if np.linalg.norm(self.TARGET_POS[0:2]-state[0:2]) < self.TARGET_ZONE:
+        if np.linalg.norm(self.TARGET_POS[0:2]-state[0:2]) < self.TARGET_ZONE-0.07:
+            # print("------------------------------------Terminated-----------------------------------")
             return True
         else:
             return False
@@ -521,25 +553,28 @@ class VisionOAAviary(BaseRLAviary):
             drone_x, drone_y, drone_z = state[0:3]
 
             # 1. Check collision with cylindrical obstacles
-            if self.OBSTACLES:
-                for obs_center in self.OBSTACLES_POSITIONS:  # List of (x, y, z) obstacle centers
-                    obs_x, obs_y, obs_z = obs_center
+            # if self.OBSTACLES:
+            for obs_center in self.OBSTACLES_POSITIONS:  # List of (x, y, z) obstacle centers
+                obs_x, obs_y, obs_z = obs_center
 
-                    # Compute 2D distance (ignoring height for cylinder collision)
-                    distance = np.sqrt((drone_x - obs_x) ** 2 + (drone_y - obs_y) ** 2)
-                    
-                    if distance <= self.COLLISION_DISTANCE:  # Collision if within the radius
-                        truncated = True
-                        break
+                # Compute 2D distance (ignoring height for cylinder collision)
+                distance = np.sqrt((drone_x - obs_x) ** 2 + (drone_y - obs_y) ** 2)
+                
+                if distance-self.OBSTACLES_RADIUS <= self.COLLISION_DISTANCE:  # Collision if within the radius
+                    truncated = True
+                    # print("----------------------------------Truncated Collision---------------------------------")
+                    break
 
             # 2. Check if the drone flies out of bounds
             if drone_z < self.LIMIT_MIN_HEIGHT or drone_z > self.LIMIT_MAX_HEIGHT: 
                 truncated = True
 
-            if np.linalg.norm(self.TARGET_POS[0:2] - state[0:2]) > (self.TARGET_RADIUS + 2.0):
+            if np.linalg.norm(self.TARGET_POS[0:2] - state[0:2]) > (self.TARGET_RADIUS + 2.5):
+                # print("----------------------------------Truncated OutMap---------------------------------")
                 truncated = True
         
         if self.step_counter/self.PYB_FREQ > self.EPISODE_LEN_SEC:
+            # print("----------------------------------Truncated Length---------------------------------")
             truncated = True
         
         return truncated
@@ -585,10 +620,55 @@ class VisionOAAviary(BaseRLAviary):
             drone's closest distance to the surface of an obstacle
 
         """
-        pos = self._getDroneStateVector(0)[0:3]     # Drone position (x, y, z)
+        pos = self._getDroneStateVector(0)[0:2]     # Drone position (x, y, z)
         if not self.OBSTACLES_POSITIONS:
             return float('inf')  # No obstacles loaded
         
-        distances = [np.linalg.norm(np.array(obstacle) - pos) - self.OBSTACLES_RADIUS 
+        distances = [np.linalg.norm(np.array(obstacle[0:2]) - pos) - self.OBSTACLES_RADIUS 
                     for obstacle in self.OBSTACLES_POSITIONS]
         return min(distances) if distances else float('inf')
+    
+    ##################################################################################
+
+    def _getClosestObstaclePosition(self):
+        """Computes the intersection point between the closest obstacle surface 
+        and the line connecting the drone to the obstacle center.
+
+        Returns
+        -------
+        tuple
+            (intersection_position, closest_distance)
+        """
+        pos = self._getDroneStateVector(0)[0:2]  # Drone position (x, y, z)
+        heading = self._getDroneStateVector(0)[9] # Drone yaw
+        if not self.OBSTACLES_POSITIONS:
+            return None, float('inf')  # No obstacles loaded
+
+        min_distance = float('inf')
+        closest_intersection = None
+
+        for obstacle in self.OBSTACLES_POSITIONS:
+            obs = np.array([obstacle[0], obstacle[1]])
+            direction = np.array(pos) - np.array(obs)
+            distance = np.linalg.norm(direction) - self.OBSTACLES_RADIUS
+
+            if distance < min_distance:
+                min_distance = distance
+                unit_direction = direction / np.linalg.norm(direction)  # Normalize vector
+                closest_intersection = np.array(obs) + self.OBSTACLES_RADIUS * unit_direction
+
+        if closest_intersection is not None:
+            # Compute relative position
+            relative_intersection = closest_intersection - pos
+
+            # Rotation matrix to transform into drone frame
+            rotation_matrix = np.array([
+                [np.cos(-heading), -np.sin(-heading)],
+                [np.sin(-heading), np.cos(-heading)]
+            ])
+            
+            # Apply rotation
+            intersection_in_drone_frame = rotation_matrix @ relative_intersection
+            return relative_intersection, min_distance
+
+        return None, float('inf')  # No valid intersection found
