@@ -34,14 +34,14 @@ from gym_pybullet_drones.utils.utils import sync, str2bool
 from gym_pybullet_drones.envs.VelocityAviary import VelocityAviary
 
 DEFAULT_DRONE = DroneModel("cf2x")
-DEFAULT_GUI = False
-DEFAULT_RECORD_VIDEO = True
-DEFAULT_PLOT = True
+DEFAULT_GUI = True
+DEFAULT_RECORD_VIDEO = False
+DEFAULT_PLOT = False
 DEFAULT_USER_DEBUG_GUI = False
-DEFAULT_OBSTACLES = False
+DEFAULT_OBSTACLES = True
 DEFAULT_SIMULATION_FREQ_HZ = 240
 DEFAULT_CONTROL_FREQ_HZ = 48
-DEFAULT_DURATION_SEC = 2
+DEFAULT_DURATION_SEC = 50
 DEFAULT_OUTPUT_FOLDER = 'results'
 DEFAULT_COLAB = False
 
@@ -60,7 +60,7 @@ def run(
         ):
         #### Initialize the simulation #############################
     INIT_XYZS = np.array([
-                          [ 0, 0, .1]
+                          [ 0, 0, 1.0]
                         #   [.3, 0, .1],
                         #   [.6, 0, .1],
                         #   [0.9, 0, .1]
@@ -101,7 +101,7 @@ def run(
     #### Initialize the velocity target ########################
     TARGET_VEL = np.zeros((1,NUM_WP,4))
     for i in range(NUM_WP):
-        TARGET_VEL[0, i, :] = [-0.5, 1, 0, 0.99] if i < (NUM_WP/8) else [0.5, -1, 0, 0.99]
+        TARGET_VEL[0, i, :] = [1, 0, 0, 0.99] #if i < (NUM_WP/2) else [1, -1, 0, 0.99]
         # TARGET_VEL[1, i, :] = [0, 1, 0, 0.99] if i < (NUM_WP/8+NUM_WP/6) else [0, -1, 0, 0.99]
         # TARGET_VEL[2, i, :] = [0.2, 1, 0.2, 0.99] if i < (NUM_WP/8+2*NUM_WP/6) else [-0.2, -1, -0.2, 0.99]
         # TARGET_VEL[3, i, :] = [0, 1, 0.5, 0.99] if i < (NUM_WP/8+3*NUM_WP/6) else [0, -1, -0.5, 0.99]
@@ -114,6 +114,7 @@ def run(
                     )
 
     #### Run the simulation ####################################
+    obs, info = env.reset(seed=42, options={})
     action = np.zeros((1,4))
     START = time.time()
     for i in range(0, int(duration_sec*env.CTRL_FREQ)):
@@ -124,6 +125,10 @@ def run(
         #### Step the simulation ###################################
         obs, reward, terminated, truncated, info = env.step(action)
 
+        print("\tAction", action, "\tReward:", reward, "\tTerminated:", terminated, "\tTruncated:", truncated)
+
+        if terminated == True:
+            obs = env.reset(seed=42, options={})
         #### Compute control for the current way point #############
         for j in range(1):
             action[j, :] = TARGET_VEL[j, wp_counters[j], :] 
@@ -133,15 +138,15 @@ def run(
             wp_counters[j] = wp_counters[j] + 1 if wp_counters[j] < (NUM_WP-1) else 0
 
         #### Log the simulation ####################################
-        for j in range(1):
-            logger.log(drone=j,
-                       timestamp=i/env.CTRL_FREQ,
-                       state= obs[j],
-                       control=np.hstack([TARGET_VEL[j, wp_counters[j], 0:3], np.zeros(9)])
-                       )
+        # for j in range(1):
+        #     logger.log(drone=j,
+        #                timestamp=i/env.CTRL_FREQ,
+        #                state= obs[j],
+        #                control=np.hstack([TARGET_VEL[j, wp_counters[j], 0:3], np.zeros(9)])
+        #                )
 
         #### Printout ##############################################
-        env.render()
+        # env.render()
 
         #### Sync the simulation ###################################
         if gui:
@@ -151,7 +156,7 @@ def run(
     env.close()
 
     #### Plot the simulation results ###########################
-    logger.save_as_csv("vel") # Optional CSV save
+    # logger.save_as_csv("vel") # Optional CSV save
     if plot:
         logger.plot()
 

@@ -15,6 +15,8 @@ import gymnasium as gym
 from gym_pybullet_drones.utils.enums import DroneModel, Physics, ImageType
 
 import random
+import json
+import math
 
 
 class BaseAviary(gym.Env):
@@ -216,6 +218,8 @@ class BaseAviary(gym.Env):
         self._updateAndStoreKinematicInformation()
         #### Start video recording #################################
         self._startVideoRecording()
+
+        self.index = 1
     
     ################################################################################
 
@@ -245,6 +249,30 @@ class BaseAviary(gym.Env):
         # TODO : initialize random number generator with seed
 
         p.resetSimulation(physicsClientId=self.CLIENT)
+
+        ######################################################################################
+        # self.index += 1
+        if self.index % 1 == 0:
+        # Example usage
+            norm_min, norm_max, min_distance = 2.0, 7.0, 1.0
+            positions = generate_positions(norm_min, norm_max, min_distance)
+            filename = save_positions(positions, norm_min, norm_max, min_distance)
+
+            try:
+                with open(filename, "r") as f:
+                    self.OBSTACLES_POSITIONS = json.load(f)
+                # print(f"Loaded {len(self.OBSTACLES_POSITIONS)} positions from {filename}")
+            except FileNotFoundError:
+                print(f"File {filename} not found.")
+                return []
+
+        # alpha = np.random.uniform(0, 2 * np.pi)
+        alpha_list = [0, np.pi/4, 2*np.pi/4, 3*np.pi/4, 4*np.pi/4, 5*np.pi/4, 6*np.pi/4, 7*np.pi/4]
+        # alpha_list = [1*np.pi/4, 7*np.pi/4]
+        alpha = random.choice(alpha_list)
+        alpha = 3*np.pi/4
+        self.TARGET_POS     = np.array([self.TARGET_RADIUS*np.cos(alpha), self.TARGET_RADIUS*np.sin(alpha), 1.0])
+
         #### Housekeeping ##########################################
         self._housekeeping()
         #### Update and store the drones kinematic information #####
@@ -255,13 +283,6 @@ class BaseAviary(gym.Env):
         initial_obs = self._computeObs()
         initial_info = self._computeInfo()
         
-        # alpha = np.random.uniform(0, 2 * np.pi)
-        alpha_list = [0, np.pi/4, 2*np.pi/4, 3*np.pi/4, 4*np.pi/4, 5*np.pi/4, 6*np.pi/4, 7*np.pi/4]
-        # alpha_list = [1*np.pi/4, 7*np.pi/4]
-        alpha = random.choice(alpha_list)
-        # alpha = 2*np.pi/4
-        self.TARGET_POS     = np.array([self.TARGET_RADIUS*np.cos(alpha), self.TARGET_RADIUS*np.sin(alpha), 1.0])
-
         return initial_obs, initial_info
     
     ################################################################################
@@ -1157,3 +1178,53 @@ class BaseAviary(gym.Env):
             current_position + normalized_direction * step_size
         )  # Calculate the next step
         return next_step
+
+
+def generate_positions(norm_min=1.5, norm_max=5, min_distance=0.8):
+    points = []
+    candidates = []
+    
+    # Generate a dense grid of candidate points
+    step = min_distance / math.sqrt(2)  # Smallest step ensuring min distance constraint
+    x_values = list(frange(-norm_max, norm_max, step))
+    y_values = list(frange(-norm_max, norm_max, step))
+    
+    for x in x_values:
+        for y in y_values:
+            norm = math.sqrt(x**2 + y**2)
+            if norm_min < norm < norm_max:
+                candidates.append((x, y))
+    
+    # Shuffle candidates to maximize random selection
+    random.shuffle(candidates)
+    
+    for x, y in candidates:
+        if all(math.dist((x, y), (px, py)) > min_distance for px, py, pz in points):
+            points.append((x, y, 0))
+    
+    return points
+
+def frange(start, stop, step):
+    while start < stop:
+        yield start
+        start += step
+    while start > -stop:
+        yield start
+        start -= step
+
+def save_positions(positions, norm_min, norm_max, min_distance):
+    filename = f"env_train.json"
+    with open(filename, "w") as f:
+        json.dump(positions, f)
+    # print(f"Saved {len(positions)} positions to {filename}")
+    return filename
+
+def load_positions(filename):
+    try:
+        with open(filename, "r") as f:
+            positions = json.load(f)
+        # print(f"Loaded {len(positions)} positions from {filename}")
+        return positions
+    except FileNotFoundError:
+        print(f"File {filename} not found.")
+        return []

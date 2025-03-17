@@ -71,10 +71,10 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     ############################################################
     ############################################################
     ############################################################
-    filename = os.path.join(output_folder, 'save-test-16-cylinder-8-directions')
+    filename = os.path.join(output_folder, 'save-test')
 
-    if os.path.isfile(filename+'/best_model_v5.zip'):
-        path = filename+'/best_model_v5.zip'
+    if os.path.isfile(filename+'/best_model_v2.1.zip'):
+        path = filename+'/best_model_v2.1.zip'
     else:
         print("[ERROR]: no model under the specified path", filename)
     model = PPO.load(path)
@@ -143,8 +143,8 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         sync(i, start, test_env.CTRL_TIMESTEP)
         if terminated:
             print("-----------------------------Terminated---------------------------")
-        elif truncated:
-            print("-----------------------------Truncated---------------------------")
+        # elif truncated:
+            # print("-----------------------------Truncated---------------------------")
 
                # test_env.close()
     #         obs = test_env.reset(seed=42, options={})

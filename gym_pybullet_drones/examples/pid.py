@@ -33,7 +33,7 @@ from gym_pybullet_drones.utils.Logger import Logger
 from gym_pybullet_drones.utils.utils import sync, str2bool
 
 DEFAULT_DRONES = DroneModel("cf2x")
-DEFAULT_NUM_DRONES = 3
+DEFAULT_NUM_DRONES = 1
 DEFAULT_PHYSICS = Physics("pyb")
 DEFAULT_GUI = True
 DEFAULT_RECORD_VISION = False
@@ -42,7 +42,7 @@ DEFAULT_USER_DEBUG_GUI = False
 DEFAULT_OBSTACLES = True
 DEFAULT_SIMULATION_FREQ_HZ = 240
 DEFAULT_CONTROL_FREQ_HZ = 48
-DEFAULT_DURATION_SEC = 12
+DEFAULT_DURATION_SEC = 120
 DEFAULT_OUTPUT_FOLDER = 'results'
 DEFAULT_COLAB = False
 
@@ -72,8 +72,10 @@ def run(
     PERIOD = 10
     NUM_WP = control_freq_hz*PERIOD
     TARGET_POS = np.zeros((NUM_WP,3))
+    TARGET_RPY = np.zeros((NUM_WP,3))
     for i in range(NUM_WP):
         TARGET_POS[i, :] = R*np.cos((i/NUM_WP)*(2*np.pi)+np.pi/2)+INIT_XYZS[0, 0], R*np.sin((i/NUM_WP)*(2*np.pi)+np.pi/2)-R+INIT_XYZS[0, 1], 0
+        TARGET_RPY[i, :] = 0, 0, (i/NUM_WP)*(2*np.pi)
     wp_counters = np.array([int((i*NUM_WP/6)%NUM_WP) for i in range(num_drones)])
 
     #### Debug trajectory ######################################
@@ -143,7 +145,8 @@ def run(
                                                                     state=obs[j],
                                                                     target_pos=np.hstack([TARGET_POS[wp_counters[j], 0:2], INIT_XYZS[j, 2]]),
                                                                     # target_pos=INIT_XYZS[j, :] + TARGET_POS[wp_counters[j], :],
-                                                                    target_rpy=INIT_RPYS[j, :]
+                                                                    target_rpy=TARGET_RPY[wp_counters[j], 0:3],
+                                                                    # target_rpy=INIT_RPYS[j, :]
                                                                     )
 
         #### Go to the next way point and loop #####################
