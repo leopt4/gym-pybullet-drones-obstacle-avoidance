@@ -108,7 +108,7 @@ class VisionOAAviary(BaseRLAviary):
         self.LIMIT_MIN_HEIGHT = 0.5
         self.LIMIT_MAX_HEIGHT = 1.5
         ## Start Point
-        self.START_POS      = np.array([0.0, 0.0, 1.0]) 
+        self.START_POS      = np.array([[0.0, 0.0, 1.0], [0.0, 0.0, 1.5]]) 
         ## Target
         self.TARGET_RADIUS  = 8.0
         # alpha = np.random.uniform(0, 2 * np.pi)
@@ -116,7 +116,9 @@ class VisionOAAviary(BaseRLAviary):
         # alpha_list = [1*np.pi/4, 7*np.pi/4]
         alpha = random.choice(alpha_list)
         alpha = 3*np.pi/4
-        self.TARGET_POS     = np.array([self.TARGET_RADIUS*np.cos(alpha), self.TARGET_RADIUS*np.sin(alpha), 1.0])
+        alpha1 = 1*np.pi/4
+        self.TARGET_POS     = np.hstack([np.array([self.TARGET_RADIUS*np.cos(alpha), self.TARGET_RADIUS*np.sin(alpha), 1.0]),
+                                        np.array([self.TARGET_RADIUS*np.cos(alpha1), self.TARGET_RADIUS*np.sin(alpha1), 1.5])])
         self.TARGET_ZONE    = 0.3
         ## Reward parameters
         # Sparse rewards
@@ -139,18 +141,19 @@ class VisionOAAviary(BaseRLAviary):
         self.ETA_O = 0.0
 
         ##
-        self.prev_distance  = self.TARGET_RADIUS
+        
 
 
         self.EPISODE_LEN_SEC = 30
 
         INIT_XYZS = np.array([
-                          [ 0, 0, 1.0]
-                        #   [.3, 0, .1],
+                          [ 0, 0, 1.0],
+                          [ 0, 0, 1.5]
                         #   [.6, 0, .1],
                         #   [0.9, 0, .1]
                           ])
         INIT_RPYS = np.array([
+                            [0, 0, 0],
                             [0, 0, 0]
                             #   [0, 0, np.pi/3],
                             #   [0, 0, np.pi/4],
@@ -175,7 +178,7 @@ class VisionOAAviary(BaseRLAviary):
         
         #### Set a limit on the maximum target speed ###############
         self.SPEED_LIMIT = 0.2 * self.MAX_SPEED_KMH * (1000/3600)
-
+        self.prev_distance  = np.array([self.TARGET_RADIUS for i in range(self.NUM_DRONES)])
 
     ################################################################################
 
@@ -472,59 +475,61 @@ class VisionOAAviary(BaseRLAviary):
 
         """
         """Computes the current reward value based on distance, collision proximity, and penalties."""
-        state = self._getDroneStateVector(0)
-        
-        # Extract relevant drone state information
-        pos = state[0:3]                        # Drone position (x, y, z)
-        target_pos = self.TARGET_POS            # Target position (x, y, z)
-        prev_distance = self.prev_distance      # Distance at previous timestep
-        
-        # Compute distances
-        d_t = np.linalg.norm(target_pos[0:2] - pos[0:2])  # Current distance to target
-        d_t_minus_1 = prev_distance             # Previous distance to target
-        d_s = self.SAFETY_DISTANCE              # Predefined safety distance
-        d_o = self._getClosestObstacleDistance()  # Distance to the closest obstacle
-        d_c = self.COLLISION_DISTANCE           # Collision threshold
-        
-        # Compute dl: distance from drone to the straight line connecting start and target
-        start_to_target = target_pos - self.START_POS
-        start_to_drone  = pos - self.START_POS
-        proj_length     = np.dot(start_to_drone, start_to_target) / np.linalg.norm(start_to_target)
-        proj_point      = self.START_POS + (proj_length / np.linalg.norm(start_to_target)) * start_to_target
-        d_l = np.linalg.norm(pos[0:2] - proj_point[0:2])  # Perpendicular distance to the line
+        # state = self._getDroneStateVector(0)
+        states = np.array([self._getDroneStateVector(i) for i in range(self.NUM_DRONES)])
+        reward = 0
+        for i in range(self.NUM_DRONES):
+            # Extract relevant drone state information
+            pos = states[i][0:3]                        # Drone position (x, y, z)
+            target_pos = self.TARGET_POS[i,:]            # Target position (x, y, z)
+            prev_distance = self.prev_distance[i]      # Distance at previous timestep
+            
+            # Compute distances
+            d_t = np.linalg.norm(target_pos[0:2] - pos[0:2])  # Current distance to target
+            d_t_minus_1 = prev_distance             # Previous distance to target
+            d_s = self.SAFETY_DISTANCE              # Predefined safety distance
+            d_o = self._getClosestObstacleDistance()  # Distance to the closest obstacle
+            d_c = self.COLLISION_DISTANCE           # Collision threshold
+            
+            # Compute dl: distance from drone to the straight line connecting start and target
+            start_to_target = target_pos - self.START_POS[i,:]
+            start_to_drone  = pos - self.START_POS[i,:]
+            proj_length     = np.dot(start_to_drone, start_to_target) / np.linalg.norm(start_to_target)
+            proj_point      = self.START_POS[i,:] + (proj_length / np.linalg.norm(start_to_target)) * start_to_target
+            d_l = np.linalg.norm(pos[0:2] - proj_point[0:2])  # Perpendicular distance to the line
 
-        # Compute continuous rewards
-        r_e = (d_t_minus_1*0 - d_t) #/ self.TARGET_RADIUS    # Distance differential reward
-        p_p = min(max(d_l / self.SCALE_DIS, self.CLIP_ZERO), self.CLIP_MAX) + 0 * min(max(np.abs(target_pos[2] - pos[2]) / self.SCALE_HEIGHT, self.CLIP_MIN), self.CLIP_MAX)  # Distance and height penalty
-        p_o = (self.CLIP_MAX - min(max((d_o - d_c) / (d_s - d_c), self.CLIP_ZERO), self.CLIP_MAX)) if d_o < d_s else 0           # Collision proximity penalty
+            # Compute continuous rewards
+            r_e = (d_t_minus_1*0 - d_t) #/ self.TARGET_RADIUS    # Distance differential reward
+            p_p = min(max(d_l / self.SCALE_DIS, self.CLIP_ZERO), self.CLIP_MAX) + 0 * min(max(np.abs(target_pos[2] - pos[2]) / self.SCALE_HEIGHT, self.CLIP_MIN), self.CLIP_MAX)  # Distance and height penalty
+            p_o = (self.CLIP_MAX - min(max((d_o - d_c) / (d_s - d_c), self.CLIP_ZERO), self.CLIP_MAX)) if d_o < d_s else 0           # Collision proximity penalty
 
-        # Compute sparse rewards
-        sparse_reward = 0
-        if d_t < self.TARGET_ZONE:  # Goal reaching reward
-            sparse_reward = self.GOAL_REACHING_REWARD
-            print("-------------------------------------Reach Goal------------------------------------")
-        elif d_o < d_c+0.03:             # Collision penalty
-            sparse_reward = self.COLLISION_PENALTY
-            print("-------------------------------------Collision-------------------------------------")
-        elif d_o <= d_s:
-            a = self.COLLISION_PENALTY / (d_c**2 - d_s**2 - 2*d_s*(d_c-d_s))
-            b = -2*a*d_s
-            c = -a*d_s**2 + 2*a*d_s**2
+            # Compute sparse rewards
+            sparse_reward = 0
+            if d_t < self.TARGET_ZONE:  # Goal reaching reward
+                sparse_reward = self.GOAL_REACHING_REWARD
+                print("-------------------------------------Reach Goal------------------------------------")
+            elif d_o < d_c+0.03:             # Collision penalty
+                sparse_reward = self.COLLISION_PENALTY
+                print("-------------------------------------Collision-------------------------------------")
+            elif d_o <= d_s:
+                a = self.COLLISION_PENALTY / (d_c**2 - d_s**2 - 2*d_s*(d_c-d_s))
+                b = -2*a*d_s
+                c = -a*d_s**2 + 2*a*d_s**2
 
-            sparse_reward = a*d_o**2 + b*d_o + c
-            # sparse_reward = self.COLLISION_PENALTY * (d_o - d_s) / (d_c - d_s)
-            print("---------------------------------------Unsafe--------------------------------------")
-        elif np.linalg.norm(self.TARGET_POS[0:2] - state[0:2]) > (self.TARGET_RADIUS + 2.0):
-            sparse_reward = self.OUTMAP_PENALTY
-            print("---------------------------------------OutMap--------------------------------------")
-        elif state[2] < 0.5:
-            sparse_reward = -300
-        # Compute final reward
-        reward = min(max(self.ETA_R * r_e - self.ETA_P * p_p - self.ETA_O * p_o, self.CLIP_MIN), self.CLIP_MAX) + sparse_reward
-        # print("\Re: ", round(self.ETA_R * r_e,3), "\Rp: ", round(-self.ETA_P * p_p, 3), "\Ro: ", -self.ETA_O * p_o, "\Spare:", sparse_reward)
-        # Update previous distance for next step
-        self.prev_distance = d_t
-        
+                sparse_reward = a*d_o**2 + b*d_o + c
+                # sparse_reward = self.COLLISION_PENALTY * (d_o - d_s) / (d_c - d_s)
+                print("---------------------------------------Unsafe--------------------------------------")
+            elif np.linalg.norm(self.TARGET_POS[i,0:2] - states[i,0:2]) > (self.TARGET_RADIUS + 2.0):
+                sparse_reward = self.OUTMAP_PENALTY
+                print("---------------------------------------OutMap--------------------------------------")
+            elif states[i][2] < 0.5:
+                sparse_reward = -300
+            # Compute final reward
+            reward += min(max(self.ETA_R * r_e - self.ETA_P * p_p - self.ETA_O * p_o, self.CLIP_MIN), self.CLIP_MAX) + sparse_reward
+            # print("\Re: ", round(self.ETA_R * r_e,3), "\Rp: ", round(-self.ETA_P * p_p, 3), "\Ro: ", -self.ETA_O * p_o, "\Spare:", sparse_reward)
+            # Update previous distance for next step
+            self.prev_distance[i] = d_t
+
         return reward
 
         ################################################################################
@@ -538,8 +543,12 @@ class VisionOAAviary(BaseRLAviary):
             Whether the current episode is done.
 
         """
-        state = self._getDroneStateVector(0)
-        if np.linalg.norm(self.TARGET_POS[0:2]-state[0:2]) < self.TARGET_ZONE-0.07:
+        # state = self._getDroneStateVector(0)
+        states = np.array([self._getDroneStateVector(i) for i in range(self.NUM_DRONES)])
+        dist = 0
+        for i in range(self.NUM_DRONES):
+            dist += np.linalg.norm(self.TARGET_POS[i,0:2]-states[i,0:2])
+        if dist < (self.TARGET_ZONE-0.07)*self.NUM_DRONES:
             print("------------------------------------Terminated-----------------------------------")
             return True
         else:

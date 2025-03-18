@@ -251,7 +251,7 @@ class BaseAviary(gym.Env):
         p.resetSimulation(physicsClientId=self.CLIENT)
 
         ######################################################################################
-        # self.index += 1
+        self.index += 1
         if self.index % 1 == 0:
         # Example usage
             norm_min, norm_max, min_distance = 2.0, 7.0, 1.0
@@ -271,8 +271,8 @@ class BaseAviary(gym.Env):
         # alpha_list = [1*np.pi/4, 7*np.pi/4]
         alpha = random.choice(alpha_list)
         alpha = 3*np.pi/4
-        self.TARGET_POS     = np.array([self.TARGET_RADIUS*np.cos(alpha), self.TARGET_RADIUS*np.sin(alpha), 1.0])
-
+        # self.TARGET_POS     = np.array([self.TARGET_RADIUS*np.cos(alpha), self.TARGET_RADIUS*np.sin(alpha), 1.0])
+        # print(self.index)
         #### Housekeeping ##########################################
         self._housekeeping()
         #### Update and store the drones kinematic information #####
