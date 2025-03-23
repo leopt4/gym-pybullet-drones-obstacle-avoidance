@@ -34,16 +34,16 @@ from gym_pybullet_drones.envs.VisionOAAviary import VisionOAAviary
 from gym_pybullet_drones.utils.utils import sync, str2bool
 from gym_pybullet_drones.utils.enums import ObservationType, ActionType
 
-from gym_pybullet_drones.net.net1 import ObstacleAvoidanceExtractor
+# from gym_pybullet_drones.net.net1 import ObstacleAvoidanceExtractor
 
-DEFAULT_GUI = True
+DEFAULT_GUI = False
 DEFAULT_RECORD_VIDEO = False
 DEFAULT_OUTPUT_FOLDER = 'results'
 DEFAULT_COLAB = False
 
 DEFAULT_OBS = ObservationType('ob') # 'kin' or 'rgb'
 DEFAULT_ACT = ActionType('vel') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one_d_pid'
-DEFAULT_AGENTS = 1
+DEFAULT_AGENTS = 2
 DEFAULT_MA = False
 
 def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True):
@@ -54,11 +54,13 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         os.makedirs(filename+'/')
 
     train_env = make_vec_env(VisionOAAviary,
-                                env_kwargs=dict(num_drones=2, obs=DEFAULT_OBS, act=DEFAULT_ACT),
+                                env_kwargs=dict(obs=DEFAULT_OBS, act=DEFAULT_ACT),
                                 n_envs=1,
                                 seed=0,
                                 )
-    eval_env = VisionOAAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT)
+    eval_env = make_vec_env(VisionOAAviary,
+                                env_kwargs=dict(obs=DEFAULT_OBS, act=DEFAULT_ACT),
+                                )
 
     #### Check the environment's spaces ########################
     print('[INFO] Action space:', train_env.action_space)
@@ -67,15 +69,16 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         "MlpPolicy",
         train_env,
         # policy_kwargs=policy_kwargs,
+        device="cpu",
         verbose=1,
         tensorboard_log=filename + "/tb/",
     )
     # Define a custom policy that integrates CustomCombinedExtractor
-    policy_kwargs = dict(
-        features_extractor_class=ObstacleAvoidanceExtractor,
-        # features_extractor_kwargs=dict(features_dim=32),  # Match the output dim of your extractor
-    )
-    #### Train the model #######################################
+    # policy_kwargs = dict(
+    #     features_extractor_class=ObstacleAvoidanceExtractor,
+    #     # features_extractor_kwargs=dict(features_dim=32),  # Match the output dim of your extractor
+    # )
+    ### Train the model #######################################
     # model = PPO(
     #     "MlpPolicy",
     #     train_env,
@@ -84,8 +87,8 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     #     tensorboard_log=filename + "/tb/",
     # )
 
-    # if os.path.isfile(filename+'/best_model_v6.zip'):
-    #     path = filename+'/best_model_v6.zip'
+    # if os.path.isfile(filename+'/best_model_v2.zip'):
+    #     path = filename+'/best_model_v2.zip'
     # else:
     #     print("[ERROR]: no model under the specified path", filename)
 
@@ -104,10 +107,10 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                                  verbose=1,
                                  best_model_save_path=filename+'/',
                                  log_path=filename+'/',
-                                 eval_freq=int(10000),
+                                 eval_freq=int(5000),
                                  deterministic=True,
                                  render=False)
-    model.learn(total_timesteps=int(5e5) if local else int(1e2), # shorter training in GitHub Actions pytest
+    model.learn(total_timesteps=int(1e5) if local else int(1e2), # shorter training in GitHub Actions pytest
                 callback=eval_callback,
                 log_interval=100)
 

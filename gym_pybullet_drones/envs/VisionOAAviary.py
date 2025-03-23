@@ -9,8 +9,8 @@ from gym_pybullet_drones.utils.enums import DroneModel, Physics, ActionType, Obs
 from gym_pybullet_drones.control.DSLPIDControl import DSLPIDControl
 
 import random
-import json
 import math
+import json
 
 class VisionOAAviary(BaseRLAviary):
     """Multi-drone environment class for control applications using vision."""
@@ -79,21 +79,7 @@ class VisionOAAviary(BaseRLAviary):
             self.ctrl = [DSLPIDControl(drone_model=DroneModel.CF2X) for i in range(num_drones)]
 
         ## Obstacle 
-        # filename = "gym_pybullet_drones/obstacles/env_3_cylinders.json"
-        # filename = "gym_pybullet_drones/obstacles/env_2.0_7_1.0_86.json"
-
-        norm_min, norm_max, min_distance = 2.0, 7.0, 1.0
-        positions = generate_positions(norm_min, norm_max, min_distance)
-        filename = save_positions(positions, norm_min, norm_max, min_distance)
-
-        # try:
-        #     with open(filename, "r") as f:
-        #         self.OBSTACLES_POSITIONS = json.load(f)
-        #     # print(f"Loaded {len(self.OBSTACLES_POSITIONS)} positions from {filename}")
-        # except FileNotFoundError:
-        #     print(f"File {filename} not found.")
-        #     return []
-        
+        filename = "gym_pybullet_drones/obstacles/env_empty.json"
         try:
             with open(filename, "r") as f:
                 self.OBSTACLES_POSITIONS = json.load(f)
@@ -102,63 +88,74 @@ class VisionOAAviary(BaseRLAviary):
             print(f"File {filename} not found.")
             return []
         
+        self.NUM_DRONES = 1
+        self.ACTION_BUFFER_SIZE = 0
+
+        # net_arch = dict(pi=[16, 16], vf=[16, 16])
+
+        # Obstacle parameters
         self.OBSTACLES_RADIUS = 0.2
+ 
+        # Observation parameters
+        self.NAVIGATION_3D          = False     # cfg.getboolean('OPTIONS', 'NAVIGATION_3D')
+        self.SPLIT_ROW              = 1         # cfg.getint('OPTIONS', 'SPLIT_ROW')
+        self.SPLIT_COL              = 5         # cfg.getint('OPTIONS', 'SPLIT_COL')
+        self.USING_VELOCITY_STATE   = False     # cfg.getboolean('OPTIONS', 'USING_VELOCITY_STATE')
+
+        self.PERCEPTION_TYPE        = 'vector'  # cfg.get('OPTIONS', 'PERCEPTION_TYPE')
+        self.MIN_DEPTH_M            = 0.07      # cfg.getfloat('OPTIONS', 'MIN_DEPTH_M')
+        self.MAX_DEPTH_M            = 3.00      # cfg.getfloat('OPTIONS', 'MAX_DEPTH_M')
         
-        ## 
-        self.LIMIT_MIN_HEIGHT = 0.5
-        self.LIMIT_MAX_HEIGHT = 1.5
-        ## Start Point
-        self.START_POS      = np.array([[0.0, 0.0, 1.0], [0.0, 0.0, 1.5]]) 
-        ## Target
-        self.TARGET_RADIUS  = 8.0
-        # alpha = np.random.uniform(0, 2 * np.pi)
-        alpha_list = [0, np.pi/4, 2*np.pi/4, 3*np.pi/4, 4*np.pi/4, 5*np.pi/4, 6*np.pi/4, 7*np.pi/4]
-        # alpha_list = [1*np.pi/4, 7*np.pi/4]
-        alpha = random.choice(alpha_list)
-        alpha = 3*np.pi/4
-        alpha1 = 1*np.pi/4
-        self.TARGET_POS     = np.hstack([np.array([self.TARGET_RADIUS*np.cos(alpha), self.TARGET_RADIUS*np.sin(alpha), 1.0]),
-                                        np.array([self.TARGET_RADIUS*np.cos(alpha1), self.TARGET_RADIUS*np.sin(alpha1), 1.5])])
-        self.TARGET_ZONE    = 0.3
+        if self.NAVIGATION_3D:
+            if self.USING_VELOCITY_STATE:
+                self.STATE_FEATURE_LENGTH = 6
+            else:
+                self.STATE_FEATURE_LENGTH = 3
+        else:
+            if self.USING_VELOCITY_STATE:
+                self.STATE_FEATURE_LENGTH = 4
+            else:
+                self.STATE_FEATURE_LENGTH = 2
+
+        self.CNN_FEATURE_LENGTH = self.SPLIT_ROW * self.SPLIT_COL
+
+        # Start, Goal position and Workspace
+        INIT_XYZS = np.array([[ 0, 0, 1.0+i*0.2] for i in range(self.NUM_DRONES)]).reshape(self.NUM_DRONES,3)
+        INIT_RPYS = np.array([[0, 0, i*np.pi/4] for i in range(self.NUM_DRONES)]).reshape(self.NUM_DRONES,3)
+        self.GOAL_DISTANCE = 3.0
+        self.goal_pos = np.array([[self.GOAL_DISTANCE * np.cos(i*np.pi/4), self.GOAL_DISTANCE * np.sin(i*np.pi/4), 1.0+i*0.2] for i in range(self.NUM_DRONES)]).reshape(self.NUM_DRONES,3)
+
+        self.work_space_x = [INIT_XYZS[0,0] - self.GOAL_DISTANCE*2, INIT_XYZS[0,0] + self.GOAL_DISTANCE*2]
+        self.work_space_y = [INIT_XYZS[0,1] - self.GOAL_DISTANCE*2, INIT_XYZS[0,1] + self.GOAL_DISTANCE*2]
+        self.work_space_z = [0.5, 2]
+        # Action
+        self.V_XY_MAX_MS        = 0.5           # cfg.getfloat('Drone', 'V_XY_MAX_MS')
+        self.V_XY_MIN_MS        = 0.0           # cfg.getfloat('Drone', 'V_XY_MIN_MS')
+        self.V_Z_MAX_MS         = 0.1           # cfg.getfloat('Drone', 'V_Z_MAX_MS')
+
+        self.YAW_RATE_MAX_DEG   = 180            # cfg.getfloat('Drone', 'YAW_RATE_MAX_DEG')
+        self.YAW_RATE_MAX_RAD   = math.radians(self.YAW_RATE_MAX_DEG)
+        self.MAX_VERTICAL_DIFFERENCE = 1.0
+
         ## Reward parameters
         # Sparse rewards
-        self.GOAL_REACHING_REWARD   = 100
-        self.COLLISION_PENALTY      = -40
-        self.OUTMAP_PENALTY         = -50
-        # Distance Error Penalty
-        self.SCALE_DIS      = 0.5
-        self.SCALE_HEIGHT   = 0.05
+        self.GOAL_REACHING_REWARD   = 30
+        self.CRASH_REWARD           = -20
+        self.OUTMAP_REWARD          = -30
         # Collision Proximity Penalty
         self.SAFETY_DISTANCE    = 0.25
-        self.COLLISION_DISTANCE = 0.07
-        # Clip
-        self.CLIP_ZERO  = 0
-        self.CLIP_MIN   = -10
-        self.CLIP_MAX   = 10
-        # Scaling factors
-        self.ETA_R = 0.8
-        self.ETA_P = 0.5
-        self.ETA_O = 0.0
+        self.CRASH_DISTANCE     = 0.07
+        # Scale
+        self.XY_SCALE           = 1.0
+        self.Z_SCALE            = 1.0
+        self.CRASH_SCALE        = 5
+        # 
+        self.GOAL_ACCEPT_RADIUS = 0.25
+        self.EPISODE_LEN_SEC = 10
 
-        ##
-        
-
-
-        self.EPISODE_LEN_SEC = 30
-
-        INIT_XYZS = np.array([
-                          [ 0, 0, 1.0],
-                          [ 0, 0, 1.5]
-                        #   [.6, 0, .1],
-                        #   [0.9, 0, .1]
-                          ])
-        INIT_RPYS = np.array([
-                            [0, 0, 0],
-                            [0, 0, 0]
-                            #   [0, 0, np.pi/3],
-                            #   [0, 0, np.pi/4],
-                            #   [0, 0, np.pi/2]
-                            ])
+        ## Variables
+        self.previous_distance_from_des_point = self.GOAL_DISTANCE
+        self.min_distance_to_obstacles = np.array([[np.inf] for i in range(self.NUM_DRONES)])   
     
         super().__init__(drone_model=drone_model,
                          num_drones=num_drones,
@@ -175,25 +172,6 @@ class VisionOAAviary(BaseRLAviary):
                         #  output_folder=output_folder,
                          vision_attributes=vision_attributes
                          )
-        
-        #### Set a limit on the maximum target speed ###############
-        self.SPEED_LIMIT = 0.2 * self.MAX_SPEED_KMH * (1000/3600)
-        self.prev_distance  = np.array([self.TARGET_RADIUS for i in range(self.NUM_DRONES)])
-
-    ################################################################################
-
-    # def reset(self):
-    #     self.truncated = False
-    #     self.done = False
-    #     for rwd in self.reward_components:
-    #         rwd.reset()
-    #     for term in self.term_components:
-    #         term.reset()
-    #     obs = super().reset()
-    #     # setting this to false here to allow one time allocations of reward and term values to not be repeated
-    #     self.init = False
-
-    #     return obs
 
     ################################################################################
 
@@ -218,200 +196,43 @@ class VisionOAAviary(BaseRLAviary):
                 useFixedBase=True,
                 globalScaling=1,
             )
-
-    ################################################################################
-    
-    # def _actionSpace(self):
-    #     """Returns the action space of the environment.
-
-    #     Returns
-    #     -------
-    #     spaces.Box
-    #         An ndarray of shape (NUM_DRONES, 4) for the commanded RPMs.
-
-    #     """
-    #     #### Action vector ######## P0            P1            P2            P3
-    #     act_lower_bound = np.array([[0.,           0.,           0.,           0.] for i in range(self.NUM_DRONES)])
-    #     act_upper_bound = np.array([[self.MAX_RPM, self.MAX_RPM, self.MAX_RPM, self.MAX_RPM] for i in range(self.NUM_DRONES)])
-    #     return spaces.Box(low=act_lower_bound, high=act_upper_bound, dtype=np.float32)
-    
-    ################################################################################
-    
-    # def _observationSpace(self):
-    #     """Returns the observation space of the environment.
-
-    #     Returns
-    #     -------
-    #     dict[str, dict[str, ndarray]]
-    #         A Dict with NUM_DRONES entries indexed by Id in string format,
-    #         each a Dict in the form {Box(20,), MultiBinary(NUM_DRONES), Box(H,W,4), Box(H,W), Box(H,W)}.
-
-    #     """
-    #     #### Observation vector ### X        Y        Z       Q1   Q2   Q3   Q4   R       P       Y       VX       VY       VZ       WX       WY       WZ       P0            P1            P2            P3
-    #     obs_lower_bound = np.array([-np.inf, -np.inf, 0.,     -1., -1., -1., -1., -np.pi, -np.pi, -np.pi, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, 0.,           0.,           0.,           0.])
-    #     obs_upper_bound = np.array([np.inf,  np.inf,  np.inf, 1.,  1.,  1.,  1.,  np.pi,  np.pi,  np.pi,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  self.MAX_RPM, self.MAX_RPM, self.MAX_RPM, self.MAX_RPM])
-    #     return spaces.Dict({str(i): spaces.Dict({"state": spaces.Box(low=obs_lower_bound,
-    #                                                                  high=obs_upper_bound,
-    #                                                                  dtype=np.float32
-    #                                                                  ),
-    #                                              "neighbors": spaces.MultiBinary(self.NUM_DRONES),
-    #                                              "rgb": spaces.Box(low=0,
-    #                                                                high=255,
-    #                                                                shape=(self.IMG_RES[1], self.IMG_RES[0], 4),
-    #                                                                dtype=np.uint8
-    #                                                                ),
-    #                                              "dep": spaces.Box(low=.01,
-    #                                                                high=1000.,
-    #                                                                shape=(self.IMG_RES[1],
-    #                                                                 self.IMG_RES[0]),
-    #                                                                dtype=np.float32
-    #                                                                ),
-    #                                              "seg": spaces.Box(low=0,
-    #                                                                high=100,
-    #                                                                shape=(self.IMG_RES[1],
-    #                                                                self.IMG_RES[0]),
-    #                                                                dtype=int
-    #                                                                )
-    #                                              }) for i in range(self.NUM_DRONES)})
-    # def _observationSpace(self):
-    #     """Returns the observation space of the environment.
-
-    #     Returns
-    #     -------
-    #     ndarray
-    #         A Box() of shape (NUM_DRONES,H,W,4) or (NUM_DRONES,12) depending on the observation type.
-
-    #     """
-    #     if self.OBS_TYPE == ObservationType.RGB:
-    #         return spaces.Box(low=0,
-    #                           high=255,
-    #                           shape=(self.NUM_DRONES, self.IMG_RES[1], self.IMG_RES[0], 4), dtype=np.uint8)
-    #     elif self.OBS_TYPE == ObservationType.KIN:
-    #         ############################################################
-    #         #### OBS SPACE OF SIZE 12
-    #         #### Observation vector ### X        Y        Z       Q1   Q2   Q3   Q4   R       P       Y       VX       VY       VZ       WX       WY       WZ
-    #         lo = -np.inf
-    #         hi = np.inf
-    #         obs_lower_bound = np.array([[lo,lo,0, lo,lo,lo,lo,lo,lo,lo,lo,lo] for i in range(self.NUM_DRONES)])
-    #         obs_upper_bound = np.array([[hi,hi,hi,hi,hi,hi,hi,hi,hi,hi,hi,hi] for i in range(self.NUM_DRONES)])
-    #         #### Add action buffer to observation space ################
-    #         act_lo = -1
-    #         act_hi = +1
-    #         for i in range(self.ACTION_BUFFER_SIZE):
-    #             obs_lower_bound = np.hstack([obs_lower_bound, np.array([[act_lo,act_lo,act_lo,act_lo] for i in range(self.NUM_DRONES)])])
-    #             obs_upper_bound = np.hstack([obs_upper_bound, np.array([[act_hi,act_hi,act_hi,act_hi] for i in range(self.NUM_DRONES)])])
-    #         return spaces.Box(low=obs_lower_bound, high=obs_upper_bound, dtype=np.float32)
-    #         ############################################################
-    #     else:
-    #         print("[ERROR] in BaseRLAviary._observationSpace()")
-
-
-    def _observationSpace(self):
-        """Returns the observation space of the environment.
-
-        Returns
-        -------
-        spaces.Dict
-            A dictionary containing:
-            - "image": A Box space for depth images (NUM_DRONES, H, W).
-            - "states": A Box space for [xyz position, xyz velocity, yaw rate] (NUM_DRONES, 7).
-        """
-        # Depth image space (assuming values range from 0 to 255)
-        # image_space = spaces.Box(
-        #     low=0,
-        #     high=255,
-        #     shape=(self.NUM_DRONES, self.IMG_RES[1], self.IMG_RES[0]),  # (NUM_DRONES, H, W)
-        #     dtype=np.uint8
+        # p.loadURDF(
+        #     "cube.urdf",
+        #     [4.5,0,0],
+        #     p.getQuaternionFromEuler([0, 0, 0]),
+        #     physicsClientId=self.CLIENT,
+        #     useFixedBase=True,
+        #     globalScaling=1,
         # )
 
-        
-        ############################################################
-        #### OBS SPACE OF SIZE 12
-        #### Observation vector ### X        Y        Z       Q1   Q2   Q3   Q4   R       P       Y       VX       VY       VZ       WX       WY       WZ
-        # State space [xyz position, xyz velocity, yaw rate]
-        lo = -np.inf
-        hi = np.inf
-        # obs_lower_bound = np.array([[lo,lo,0, lo,lo,lo,lo,lo] for i in range(self.NUM_DRONES)])
-        # obs_upper_bound = np.array([[hi,hi,hi,hi,hi,hi,hi,hi] for i in range(self.NUM_DRONES)])
-
-        obs_lower_bound = np.array([[lo,lo,lo,lo,lo,lo,lo,lo] for i in range(self.NUM_DRONES)])
-        obs_upper_bound = np.array([[hi,hi,hi,hi,hi,hi,hi,hi] for i in range(self.NUM_DRONES)])
-
-        # obs_lower_bound = np.array([[lo,lo,lo,lo] for i in range(self.NUM_DRONES)])
-        # obs_upper_bound = np.array([[hi,hi,hi,hi] for i in range(self.NUM_DRONES)])
-
-        state_space = spaces.Box(low=obs_lower_bound, high=obs_upper_bound, dtype=np.float32)
-
-        return state_space
-        # return spaces.Dict({
-        #     "image": image_space,
-        #     "states": state_space
-        # })
-
+# ! -------------------------------- ACTION ---------------------------------------------
     ################################################################################
-
-    def _computeObs(self):
-        """Returns the current observation of the environment as a dictionary.
+    def _actionSpace(self):
+        """Returns the action space of the environment.
 
         Returns
         -------
-        dict[str, np.ndarray]
-            - "image": A NumPy array of shape (NUM_DRONES, H, W) containing depth images.
-            - "states": A NumPy array of shape (NUM_DRONES, 7) containing [xyz position, xyz velocity, yaw rate].
+        spaces.Box
+            A Box of size NUM_DRONES x 4, 3, or 1, depending on the action type.
+
         """
-        obs_dict = {}
 
-        # Capture depth images
-        if self.step_counter % self.IMG_CAPTURE_FREQ == 0:
-            for i in range(self.NUM_DRONES):
-                self.rgb[i], self.dep[i], self.seg[i] = self._getDroneImages(i, segmentation=False)
+        if self.NAVIGATION_3D:
+            action_size = 3
+            act_lower_bound = np.array([[self.V_XY_MIN_MS, -self.V_Z_MAX_MS, -self.YAW_RATE_MAX_RAD] for i in range(self.NUM_DRONES)])
+            act_upper_bound = np.array([[self.V_XY_MAX_MS, self.V_Z_MAX_MS, self.YAW_RATE_MAX_RAD] for i in range(self.NUM_DRONES)])
 
-                # Save images if recording is enabled
-                if self.RECORD:
-                    self._exportImage(
-                        img_type=ImageType.DEP,
-                        img_input=self.dep[i],
-                        path=self.ONBOARD_IMG_PATH + f"/drone_{i}",
-                        frame_num=int(self.step_counter / self.IMG_CAPTURE_FREQ)
-                    )
+        else:
+            action_size = 2
+            act_lower_bound = np.array([[self.V_XY_MIN_MS, -self.YAW_RATE_MAX_RAD] for i in range(self.NUM_DRONES)])
+            act_upper_bound = np.array([[self.V_XY_MAX_MS, self.YAW_RATE_MAX_RAD] for i in range(self.NUM_DRONES)])
 
-        obs_dict["image"] = np.array([self.dep[i] for i in range(self.NUM_DRONES)]).astype('float32')
-
-        # Compute Obstacle
-        obs_obs, obs_dis = self._getClosestObstaclePosition()
-        # Capture drone states
-        obs_states = np.zeros((self.NUM_DRONES, 8))  # [xyz position, xyz velocity, yaw rate, yaw diff]
-        for i in range(self.NUM_DRONES):
-            state = self._getDroneStateVector(i)
-            # Compute distance from the drone to target
-            dis = self.TARGET_POS - state[0:3]
-            # XYZ Velocity
-            vel = state[10:13]
-            # Yaw rate
-            yaw = state[9]
-            yaw_rate = state[16]
-            # Compute target yaw (direction towards the target)
-            target_yaw = np.arctan2(self.TARGET_POS[1] - state[1], self.TARGET_POS[0] - state[0])
-
-            # Compute yaw difference and normalize to [-pi, pi]
-            yaw_diff = np.arctan2(np.sin(target_yaw - yaw), np.cos(target_yaw - yaw))
-
-            #
-            dis_norm = np.linalg.norm(dis[0:2])/self.TARGET_RADIUS
-            obs_dis = obs_dis #/ (self.TARGET_RADIUS/2)
-            obs_obs[0:2] = obs_obs[0:2] #/ (self.TARGET_RADIUS/2)
-            vel[0:2] = vel[0:2] / self.SPEED_LIMIT
-            dis[0:2] = dis[0:2] / (self.TARGET_RADIUS/np.sqrt(2))
-            # obs_states[i, :] = np.hstack([dis, vel, yaw_rate, yaw_diff]).reshape(8,)
-            obs_states[i, :] = np.hstack([dis[0:2], dis_norm, vel[0:2], obs_obs[0:2], obs_dis]).reshape(8,)
-            # obs_states[i, :] = np.hstack([dis[0:2], vel[0:2]]).reshape(4,)
+        # Init action buffer
+        for i in range(self.ACTION_BUFFER_SIZE):
+            self.action_buffer.append(np.zeros((self.NUM_DRONES,action_size)))
         
-        obs_dict["states"] = np.array(obs_states).astype('float32')
+        return spaces.Box(low=act_lower_bound, high=act_upper_bound, dtype=np.float32)
 
-        return obs_states
-
-    ################################################################################
-    
     def _preprocessAction(self,
                           action
                           ):
@@ -432,38 +253,199 @@ class VisionOAAviary(BaseRLAviary):
 
         """
         rpm = np.zeros((self.NUM_DRONES, 4))
-        for k in range(action.shape[0]):
-            #### Get the current state of the drone  ###################
-            state = self._getDroneStateVector(k)
-            target_v = action[k, :]
-            #### Normalize the first 3 components of the target velocity
-            if np.linalg.norm(target_v[0:2]) > self.SPEED_LIMIT:
-                v_unit_vector = target_v[0:2] / np.linalg.norm(target_v[0:2])
-                vel = np.array([v_unit_vector[0], v_unit_vector[1], 0]) * self.SPEED_LIMIT
-                # print("------------------------------over vel limit------------------------------------")
+        for i in range(action.shape[0]):
+            target_v = action[i, :]
+
+            # ! Note scale actions
+            # v_xy_sp = action[0] * 0.7
+            # yaw_rate_sp = action[-1] * 2
+
+            if self.NAVIGATION_3D:
+                v_z_sp = float(target_v[1])
             else:
-                vel = np.array([target_v[0], target_v[1], 0])
-            # if np.linalg.norm(target_v[0:2]) != 0:
-            #     v_unit_vector = target_v[0:2] / np.linalg.norm(target_v[0:2])
-            # else:
-            #     v_unit_vector = np.zeros(2)
-            # vel = np.array([v_unit_vector[0], v_unit_vector[1], 0])
-            temp, _, _ = self.ctrl[k].computeControl(control_timestep=self.CTRL_TIMESTEP,
-                                                    cur_pos=state[0:3],
-                                                    cur_quat=state[3:7],
-                                                    cur_vel=state[10:13],
-                                                    cur_ang_vel=state[13:16],
-                                                    target_pos=state[0:3], # same as the current position
-                                                    # target_rpy=np.array([0,0,state[9]+np.pi/100]), # keep current yaw
-                                                    target_vel= vel # target the desired velocity vector
-                                                    # target_rpy=np.array([0,0,target_v[3]])
+                v_z_sp = 0.0
+
+            yaw_sp = self.rpy[i,2] + target_v[-1] * self.CTRL_TIMESTEP
+            
+            v_x_sp = target_v[0] * math.cos(yaw_sp)
+            v_y_sp = target_v[0] * math.sin(yaw_sp)
+
+            pos_x_sp = self.pos[0,0] + v_x_sp * self.CTRL_TIMESTEP
+            pos_y_sp = self.pos[0,1] + v_y_sp * self.CTRL_TIMESTEP
+            pos_z_sp = self.pos[0,2]
+
+            temp, _, _ = self.ctrl[i].computeControl(control_timestep=self.CTRL_TIMESTEP,
+                                                    cur_pos=self.pos[i,:],
+                                                    cur_quat=self.quat[i,:],
+                                                    cur_vel=self.vel[i,:],
+                                                    cur_ang_vel=self.ang_v[i,:],
+                                                    target_pos=np.array([pos_x_sp, pos_y_sp, pos_z_sp]),                       # same as the current position
+                                                    target_vel=np.array([v_x_sp, v_y_sp, v_z_sp]),  # target the desired velocity vector
+                                                    target_rpy=np.array([0,0,yaw_sp]),
+                                                    target_rpy_rates=np.array([0,0,target_v[-1]])
                                                     )
-            rpm[k,:] = temp
+            rpm[i,:] = temp
+
         return rpm
-
+    
+# ! ------------------------------- OBSERVATION -----------------------------------------
     ################################################################################
+    def _observationSpace(self):
+        """Returns the observation space of the environment.
 
-    def _computeReward(self):
+        Returns
+        -------
+        spaces.Dict
+            A dictionary containing:
+            - "image": A Box space for depth images (NUM_DRONES, H, W).
+            - "states": A Box space for [xyz position, xyz velocity, yaw rate] (NUM_DRONES, 7).
+        """
+
+        
+        if self.PERCEPTION_TYPE == 'vector':
+            #### OBS SPACE OF SIZE CNN_FEATURE_LENGTH + STATE_LENGTH
+            lo = 0
+            hi = 1
+            # Observation length
+            obs_length = self.CNN_FEATURE_LENGTH*0 + self.STATE_FEATURE_LENGTH
+
+            obs_lower_bound = np.array([[lo]*obs_length for i in range(self.NUM_DRONES)])
+            obs_upper_bound = np.array([[hi]*obs_length for i in range(self.NUM_DRONES)])
+
+            observation_space = spaces.Box(low=obs_lower_bound, high=obs_upper_bound, dtype=np.float32)
+
+        elif self.PERCEPTION_TYPE == "image_states":
+            observation_space = spaces.Box(low=0, high=255,
+                                            shape=(self.screen_height,
+                                                    self.screen_width, 2),
+                                            dtype=np.uint8)
+
+        return observation_space
+
+    def _computeObs(self):
+        """Returns the current observation of the environment as a dictionary.
+
+        Returns
+        -------
+        dict[str, np.ndarray]
+            - "image": A NumPy array of shape (NUM_DRONES, H, W) containing depth images.
+            - "states": A NumPy array of shape (NUM_DRONES, 7) containing [xyz position, xyz velocity, yaw rate].
+        """
+        if self.PERCEPTION_TYPE == 'vector':
+            obs = self._getObsVector()
+
+        # elif self.perception_type == 'image_states':
+        #     obs = self.get_obs_lgmd()
+        # else:
+        #     obs = self.get_obs_image()
+
+        return obs
+
+    def _getObsVector(self):
+        
+        # obs_length = self.CNN_FEATURE_LENGTH + self.STATE_FEATURE_LENGTH
+        obs_length = self.STATE_FEATURE_LENGTH
+        obs = np.zeros((self.NUM_DRONES, obs_length))
+        if self.step_counter % self.IMG_CAPTURE_FREQ == 0:
+            for i in range(self.NUM_DRONES):
+                ## GET IMAGE VECTOR SIZE OF CNN_FEATURE_LENGTH (SPLIT_ROW * SPLIT_COL)
+                img_vector_norm_obs = self._getImageVectorObs(i)
+                
+                ## GET STATES VECTOR SIZE OF STATE_LENGTH
+                state_norm_obs = self._getStateObs(i) / 255
+
+                ## CONCATENATE OBSERVATION FEATURE
+                # obs[i,:] = np.hstack([img_vector_norm_obs, state_norm_obs]).reshape(1,obs_length)
+                obs[i,:] = np.hstack([state_norm_obs]).reshape(1,obs_length)
+            ret = np.array([obs[i, :] for i in range(self.NUM_DRONES)]).astype('float32')
+            #### Add action buffer to observation #######################
+            for i in range(self.ACTION_BUFFER_SIZE):
+                ret = np.hstack([ret, np.array([self.action_buffer[i][j, :] for j in range(self.NUM_DRONES)])])
+
+        return ret
+    
+    def _getImageVectorObs(self, nth_drone):
+        
+        self.rgb[nth_drone], self.dep[nth_drone], self.seg[nth_drone] = self._getDroneImages(nth_drone, segmentation=False)
+
+        # Save images if recording is enabled
+        if self.RECORD:
+            self._exportImage(
+                img_type=ImageType.DEP,
+                img_input=self.dep[nth_drone],
+                path=self.ONBOARD_IMG_PATH + f"/drone_{nth_drone}",
+                frame_num=int(self.step_counter / self.IMG_CAPTURE_FREQ)
+            )
+
+        # filtered_values = self.dep[i][(self.dep[i] >= self.min_depth_meters) & (self.dep[i] <= self.max_depth_meters)]
+        
+        # Vectorize depth image to size 1 x (cnn_feature_length)
+        image_scaled = np.clip(self.dep[nth_drone], self.MIN_DEPTH_M, self.MAX_DEPTH_M) \
+                            / (self.MAX_DEPTH_M - self.MIN_DEPTH_M)
+        
+        self.min_distance_to_obstacles[nth_drone] = image_scaled.min()
+
+        image_scaled = image_scaled * 255
+        image_scaled = 255 - image_scaled
+        image_uint8 = image_scaled.astype(np.uint8)
+
+        v_split_list = np.vsplit(image_uint8, self.SPLIT_ROW)
+
+        split_final = []
+        for i in range(self.SPLIT_ROW):
+            h_split_list = np.hsplit(v_split_list[i], self.SPLIT_COL)
+            for j in range(self.SPLIT_COL):
+                split_final.append(h_split_list[j].max())
+
+        img_feature_norm = np.array(split_final).reshape(1,self.SPLIT_ROW*self.SPLIT_COL) / 255.0
+
+        return img_feature_norm
+    
+    def _getStateObs(self, nth_drone):
+        distance = self.get_distance_to_goal_2d(nth_drone)
+
+        relative_yaw = self.get_relative_yaw(nth_drone)                    # return relative yaw -pi to pi 
+        
+        relative_pose_z = self.pos[nth_drone,2] - self.goal_pos[nth_drone,2]   # current position z is positive
+
+        vertical_distance_norm = (relative_pose_z / self.MAX_VERTICAL_DIFFERENCE / 2 + 0.5) * 255
+
+        distance_norm = distance / self.GOAL_DISTANCE / 2 * 255
+
+        relative_yaw_norm = (relative_yaw / np.pi / 2 + 0.5) * 255
+
+        # current speed and angular speed
+        velocity = self.vel[nth_drone,:]
+        linear_velocity_xy = np.sqrt(pow(velocity[0], 2) + pow(velocity[1], 2))
+        linear_velocity_norm = (linear_velocity_xy - self.V_XY_MIN_MS) / (self.V_XY_MAX_MS - self.V_XY_MIN_MS) * 255
+        linear_velocity_z = velocity[2]
+        linear_velocity_z_norm = (linear_velocity_z / self.V_Z_MAX_MS / 2 + 0.5) * 255
+
+        angular_velocity = self.ang_v[nth_drone,2]
+        angular_velocity_norm = (angular_velocity / self.YAW_RATE_MAX_RAD / 2 + 0.5) * 255
+
+        # state: distance_h, distance_v, relative yaw, velocity_x, velocity_z, velocity_yaw
+        self.state_raw = np.array([distance, relative_pose_z,  math.degrees(
+            relative_yaw), linear_velocity_xy, linear_velocity_z,  math.degrees(angular_velocity)])
+        state_norm = np.array([distance_norm, vertical_distance_norm, relative_yaw_norm,
+                            linear_velocity_norm, linear_velocity_z_norm, angular_velocity_norm])
+        state_norm = np.clip(state_norm, 0, 255)
+        
+        if self.NAVIGATION_3D:
+            if self.USING_VELOCITY_STATE == False:
+                state_norm = state_norm[:3]
+        else:
+            state_norm = np.array(
+                [state_norm[0], state_norm[2], state_norm[3], state_norm[5]])
+            if self.USING_VELOCITY_STATE == False:
+                state_norm = state_norm[:2]
+
+        state_norm = state_norm.reshape(1,len(state_norm))
+        return state_norm
+    
+# ! --------------------------------- REWARD ---------------------------------------------
+    ################################################################################
+    def _computeReward(self, action, terminated=False, truncated=False):
         """Computes the current reward value(s).
 
         Unused as this subclass is not meant for reinforcement learning.
@@ -475,65 +457,74 @@ class VisionOAAviary(BaseRLAviary):
 
         """
         """Computes the current reward value based on distance, collision proximity, and penalties."""
-        # state = self._getDroneStateVector(0)
-        states = np.array([self._getDroneStateVector(i) for i in range(self.NUM_DRONES)])
+
         reward = 0
-        for i in range(self.NUM_DRONES):
-            # Extract relevant drone state information
-            pos = states[i][0:3]                        # Drone position (x, y, z)
-            target_pos = self.TARGET_POS[i,:]            # Target position (x, y, z)
-            prev_distance = self.prev_distance[i]      # Distance at previous timestep
+
+        distance_reward_coef = 10
+
+        if not (terminated or truncated):
+            # 1 - goal reward
+            distance_now = self.get_distance_to_goal_3d(0)
+            reward_distance = distance_reward_coef * (self.previous_distance_from_des_point - distance_now) / \
+                self.GOAL_DISTANCE   # normalized to 100 according to goal_distance
             
-            # Compute distances
-            d_t = np.linalg.norm(target_pos[0:2] - pos[0:2])  # Current distance to target
-            d_t_minus_1 = prev_distance             # Previous distance to target
-            d_s = self.SAFETY_DISTANCE              # Predefined safety distance
-            d_o = self._getClosestObstacleDistance()  # Distance to the closest obstacle
-            d_c = self.COLLISION_DISTANCE           # Collision threshold
-            
-            # Compute dl: distance from drone to the straight line connecting start and target
-            start_to_target = target_pos - self.START_POS[i,:]
-            start_to_drone  = pos - self.START_POS[i,:]
-            proj_length     = np.dot(start_to_drone, start_to_target) / np.linalg.norm(start_to_target)
-            proj_point      = self.START_POS[i,:] + (proj_length / np.linalg.norm(start_to_target)) * start_to_target
-            d_l = np.linalg.norm(pos[0:2] - proj_point[0:2])  # Perpendicular distance to the line
+            self.previous_distance_from_des_point = distance_now
 
-            # Compute continuous rewards
-            r_e = (d_t_minus_1*0 - d_t) #/ self.TARGET_RADIUS    # Distance differential reward
-            p_p = min(max(d_l / self.SCALE_DIS, self.CLIP_ZERO), self.CLIP_MAX) + 0 * min(max(np.abs(target_pos[2] - pos[2]) / self.SCALE_HEIGHT, self.CLIP_MIN), self.CLIP_MAX)  # Distance and height penalty
-            p_o = (self.CLIP_MAX - min(max((d_o - d_c) / (d_s - d_c), self.CLIP_ZERO), self.CLIP_MAX)) if d_o < d_s else 0           # Collision proximity penalty
+            # 2 - Position punishment
+            current_pose = self.pos[0,:]
+            goal_pose = self.goal_pos[0,:]
+            x = current_pose[0]
+            y = current_pose[1]
+            z = current_pose[2]
+            x_g = goal_pose[0]
+            y_g = goal_pose[1]
+            z_g = goal_pose[2]
 
-            # Compute sparse rewards
-            sparse_reward = 0
-            if d_t < self.TARGET_ZONE:  # Goal reaching reward
-                sparse_reward = self.GOAL_REACHING_REWARD
-                print("-------------------------------------Reach Goal------------------------------------")
-            elif d_o < d_c+0.03:             # Collision penalty
-                sparse_reward = self.COLLISION_PENALTY
-                print("-------------------------------------Collision-------------------------------------")
-            elif d_o <= d_s:
-                a = self.COLLISION_PENALTY / (d_c**2 - d_s**2 - 2*d_s*(d_c-d_s))
-                b = -2*a*d_s
-                c = -a*d_s**2 + 2*a*d_s**2
+            punishment_xy = np.clip(self.getDis(
+                x, y, 0, 0, x_g, y_g) / self.XY_SCALE, 0, 1)
+            punishment_z = 0.5 * np.clip(abs(z - z_g)/self.Z_SCALE, 0, 1)
 
-                sparse_reward = a*d_o**2 + b*d_o + c
-                # sparse_reward = self.COLLISION_PENALTY * (d_o - d_s) / (d_c - d_s)
-                print("---------------------------------------Unsafe--------------------------------------")
-            elif np.linalg.norm(self.TARGET_POS[i,0:2] - states[i,0:2]) > (self.TARGET_RADIUS + 2.0):
-                sparse_reward = self.OUTMAP_PENALTY
-                print("---------------------------------------OutMap--------------------------------------")
-            elif states[i][2] < 0.5:
-                sparse_reward = -300
-            # Compute final reward
-            reward += min(max(self.ETA_R * r_e - self.ETA_P * p_p - self.ETA_O * p_o, self.CLIP_MIN), self.CLIP_MAX) + sparse_reward
-            # print("\Re: ", round(self.ETA_R * r_e,3), "\Rp: ", round(-self.ETA_P * p_p, 3), "\Ro: ", -self.ETA_O * p_o, "\Spare:", sparse_reward)
-            # Update previous distance for next step
-            self.prev_distance[i] = d_t
+            punishment_pose = punishment_xy + punishment_z
 
+            min_distance_to_obstacles = self.min_distance_to_obstacles[0].astype(float)
+            if min_distance_to_obstacles[0] < self.SAFETY_DISTANCE:
+                punishment_obs = 1 - np.clip((min_distance_to_obstacles[0] - self.CRASH_DISTANCE) / self.CRASH_SCALE, 0, 1)
+            else:
+                punishment_obs = 0
+
+            punishment_action = 0
+
+            # add yaw_rate cost
+            yaw_speed_cost = abs(action[0,-1]) / self.YAW_RATE_MAX_RAD
+
+            if self.NAVIGATION_3D:
+                # add action and z error cost
+                v_z_cost = ((abs(action[0,1]) / self.V_Z_MAX_MS)**2)
+                z_err_cost = (
+                    (abs(self.state_raw[1]) / self.MAX_VERTICAL_DIFFERENCE)**2)
+                punishment_action += (v_z_cost + z_err_cost)
+
+            punishment_action += yaw_speed_cost
+
+            yaw_error = self.state_raw[2]
+            yaw_error_cost = abs(yaw_error / 90)
+
+            reward = reward_distance - 0.1 * punishment_pose - 0.2 * \
+                punishment_obs - 0.1 * punishment_action - 0.5 * yaw_error_cost
+        else:
+            if self.has_reached_des_pose:
+                reward = self.GOAL_REACHING_REWARD
+            if self.too_close_to_obstable:
+                reward = self.CRASH_REWARD
+            if self.is_not_inside_workspace_now:
+                reward = self.OUTMAP_REWARD
+        # print("Distance: ", round(reward_distance,5), "Pose: ", round(- 0.1 * punishment_pose, 5), "Action: ", round(- 0.1 * punishment_action, 5), "Yaw: ", round(- 0.5 * yaw_error_cost, 5))
         return reward
 
         ################################################################################
-    
+
+# ! --------------------------------- TERMINATED -----------------------------------------
+    ################################################################################
     def _computeTerminated(self):
         """Computes the current done value.
 
@@ -543,19 +534,11 @@ class VisionOAAviary(BaseRLAviary):
             Whether the current episode is done.
 
         """
-        # state = self._getDroneStateVector(0)
-        states = np.array([self._getDroneStateVector(i) for i in range(self.NUM_DRONES)])
-        dist = 0
-        for i in range(self.NUM_DRONES):
-            dist += np.linalg.norm(self.TARGET_POS[i,0:2]-states[i,0:2])
-        if dist < (self.TARGET_ZONE-0.07)*self.NUM_DRONES:
-            print("------------------------------------Terminated-----------------------------------")
-            return True
-        else:
-            return False
-    
+
+        return self.reachDesiredPose()
+
+# ! --------------------------------- TRUNCATED ------------------------------------------
     ################################################################################
-    
     def _computeTruncated(self):
         """Computes the current truncated value(s).
 
@@ -569,70 +552,162 @@ class VisionOAAviary(BaseRLAviary):
         """
         truncated = False
 
-        for k in range(self.NUM_DRONES):
-            #### Get the current state of the drone  ###################
-            state = self._getDroneStateVector(k)
 
-            drone_x, drone_y, drone_z = state[0:3]
+        self.is_not_inside_workspace_now = self.isNotInsideWorkspace()
+        self.has_reached_des_pose = self.reachDesiredPose()
+        self.too_close_to_obstable = self.isCrashed()
 
-            # 1. Check collision with cylindrical obstacles
-            # if self.OBSTACLES:
+        truncated = self.is_not_inside_workspace_now or\
+            self.has_reached_des_pose or\
+            self.too_close_to_obstable or\
+            self.step_counter/self.PYB_FREQ > self.EPISODE_LEN_SEC
+        
+        return truncated
+
+# ! ---------------------------------- INFORMATION ---------------------------------------
+    ################################################################################
+    def _computeInfo(self):
+        """Computes the current info dict(s).
+
+        Returns
+        -------
+        dict[str, bool]
+            info.
+
+        """
+        info = {
+            'is_success': self.reachDesiredPose(),
+            'is_crash': self.isCrashed(),
+            'is_not_in_workspace': self.isNotInsideWorkspace(),
+            'step_num': self.step_counter/self.PYB_FREQ
+        }
+        return info
+
+# ! -------------------------- CONDITION FUNCTION------------------------------------------
+    ################################################################################
+
+    def isNotInsideWorkspace(self):
+        """
+        Check if the Drones is inside the Workspace defined
+        """
+        is_not_inside = False
+        for i in range(self.NUM_DRONES):
+            current_position = self.pos[i,:]
+
+            if current_position[0] < self.work_space_x[0] or current_position[0] > self.work_space_x[1] or \
+                current_position[1] < self.work_space_y[0] or current_position[1] > self.work_space_y[1] or \
+                    current_position[2] < self.work_space_z[0] or current_position[2] > self.work_space_z[1]:
+                is_not_inside = True
+                # print("------------------------------------OUTMAP---------------------------------------")
+
+        return is_not_inside
+
+    def reachDesiredPose(self):
+        reach_desired_pose = False
+        for i in range(self.NUM_DRONES):
+            if self.get_distance_to_goal_3d(i) < self.GOAL_ACCEPT_RADIUS:
+                reach_desired_pose = True
+                print("------------------------------------GOAL-----------------------------------------")
+
+        return reach_desired_pose
+
+    def isCrashed(self):
+        is_crashed_truncated = False
+
+        for i in range(self.NUM_DRONES):
             for obs_center in self.OBSTACLES_POSITIONS:  # List of (x, y, z) obstacle centers
                 obs_x, obs_y, obs_z = obs_center
 
                 # Compute 2D distance (ignoring height for cylinder collision)
-                distance = np.sqrt((drone_x - obs_x) ** 2 + (drone_y - obs_y) ** 2)
+                distance = np.sqrt(pow(self.pos[i,0] - obs_x, 2) + pow(self.pos[i,1] - obs_y, 2))
                 
-                if distance-self.OBSTACLES_RADIUS <= self.COLLISION_DISTANCE:  # Collision if within the radius
-                    truncated = True
-                    print("----------------------------------Truncated Collision---------------------------------")
+                if distance-self.OBSTACLES_RADIUS <= self.CRASH_DISTANCE:  # Collision if within the radius
+                    is_crashed_truncated = True
+                    # print("------------------------------------CRASH-----------------------------------------")
                     break
 
-            # 2. Check if the drone flies out of bounds
-            if drone_z < self.LIMIT_MIN_HEIGHT or drone_z > self.LIMIT_MAX_HEIGHT: 
-                truncated = True
-
-            if np.linalg.norm(self.TARGET_POS[0:2] - state[0:2]) > (self.TARGET_RADIUS + 3.5):
-                print("----------------------------------Truncated OutMap---------------------------------")
-                truncated = True
-        
-        if self.step_counter/self.PYB_FREQ > self.EPISODE_LEN_SEC:
-            print("----------------------------------Truncated Length---------------------------------")
-            truncated = True
-        
-        return truncated
-
-    ################################################################################
+        return is_crashed_truncated
     
-    # def _computeDone(self):
-    #     """Computes the current done value(s).
+    # ! ------------------ USEFULL FUNCTION ---------------------------------------------
+    #################################################################################
 
-    #     Unused as this subclass is not meant for reinforcement learning.
-
-    #     Returns
-    #     -------
-    #     bool
-    #         Dummy value.
-
-    #     """
-    #     return False
-
-    ################################################################################
-    
-    def _computeInfo(self):
-        """Computes the current info dict(s).
-
-        Unused as this subclass is not meant for reinforcement learning.
+    def get_relative_yaw(self, nth_drone):
+        """Returns relative yaw from current pose to goal in radian of the n-th drone.
+        Parameters
+        ----------
+        nth_drone : int
+            The ordinal number/position of the desired drone in list self.DRONE_IDS.
 
         Returns
         -------
-        dict[str, int]
-            Dummy value.
+        ndarray 
+            Relative yaw from current pose to goal in radian of the n-th drone.
 
         """
-        return {"answer": 42} #### Calculated by the Deep Thought supercomputer in 7.5M years
+        current_position = self.pos[nth_drone, :]
+        goal_pos = self.goal_pos[nth_drone, :]
+        # get relative angle
+        relative_pose_x = goal_pos[0] - current_position[0]
+        relative_pose_y = goal_pos[1] - current_position[1]
+        angle = np.arctan2(relative_pose_y, relative_pose_x)
 
-    ################################################################################
+        # get current yaw
+        yaw_current = self.rpy[nth_drone, 2]
+        
+        # get yaw error
+        yaw_error = angle - yaw_current
+        yaw_error = angle_norm(yaw_error)
+
+        return yaw_error
+    
+    def get_distance_to_goal_2d(self, nth_drone):
+        """ 2D Returns distance from current pose to goal in meters of the n-th drone.
+        Parameters
+        ----------
+        nth_drone : int
+            The ordinal number/position of the desired drone in list self.DRONE_IDS.
+
+        Returns
+        -------
+        ndarray 
+            2D Distance from current pose to goal in meters of the n-th drone.
+
+        """
+        return np.sqrt(pow(self.pos[nth_drone, 0] - self.goal_pos[nth_drone, 0], 2) \
+                       + pow(self.pos[nth_drone, 1] - self.goal_pos[nth_drone, 1], 2))
+    
+    def get_distance_to_goal_3d(self, nth_drone):
+        """Returns 3D distance from current pose to goal in meters of the n-th drone.
+        Parameters
+        ----------
+        nth_drone : int
+            The ordinal number/position of the desired drone in list self.DRONE_IDS.
+
+        Returns
+        -------
+        ndarray 
+            3D Distance from current pose to goal in meters of the n-th drone.
+
+        """
+        current_pose = self.pos[nth_drone, :]
+        goal_pose = self.goal_pos[nth_drone, :]
+        relative_pose_x = current_pose[0] - goal_pose[0]
+        relative_pose_y = current_pose[1] - goal_pose[1]
+        relative_pose_z = current_pose[2] - goal_pose[2]
+
+        return np.sqrt(pow(relative_pose_x, 2) + pow(relative_pose_y, 2) + pow(relative_pose_z, 2))
+    
+    def getDis(self, pointX, pointY, lineX1, lineY1, lineX2, lineY2):
+        '''
+        Get distance between Point and Line
+        Used to calculate position punishment
+        '''
+        a = lineY2-lineY1
+        b = lineX1-lineX2
+        c = lineX2*lineY1-lineX1*lineY2
+        dis = (math.fabs(a*pointX+b*pointY+c))/(math.pow(a*a+b*b, 0.5))
+
+        return dis
 
     def _getClosestObstacleDistance(self):
         """Computes the closest distance from the drone to any obstacle.
@@ -650,10 +725,7 @@ class VisionOAAviary(BaseRLAviary):
         distances = [np.linalg.norm(np.array(obstacle[0:2]) - pos) - self.OBSTACLES_RADIUS 
                     for obstacle in self.OBSTACLES_POSITIONS]
         return min(distances) if distances else float('inf')
-    
-    ##################################################################################
 
-    def _getClosestObstaclePosition(self):
         """Computes the intersection point between the closest obstacle surface 
         and the line connecting the drone to the obstacle center.
 
@@ -697,51 +769,9 @@ class VisionOAAviary(BaseRLAviary):
         return None, float('inf')  # No valid intersection found
 
 
-def generate_positions(norm_min=1.5, norm_max=5, min_distance=0.8):
-    points = []
-    candidates = []
-    
-    # Generate a dense grid of candidate points
-    step = min_distance / math.sqrt(2)  # Smallest step ensuring min distance constraint
-    x_values = list(frange(-norm_max, norm_max, step))
-    y_values = list(frange(-norm_max, norm_max, step))
-    
-    for x in x_values:
-        for y in y_values:
-            norm = math.sqrt(x**2 + y**2)
-            if norm_min < norm < norm_max:
-                candidates.append((x, y))
-    
-    # Shuffle candidates to maximize random selection
-    random.shuffle(candidates)
-    
-    for x, y in candidates:
-        if all(math.dist((x, y), (px, py)) > min_distance for px, py, pz in points):
-            points.append((x, y, 0))
-    
-    return points
-
-def frange(start, stop, step):
-    while start < stop:
-        yield start
-        start += step
-    while start > -stop:
-        yield start
-        start -= step
-
-def save_positions(positions, norm_min, norm_max, min_distance):
-    filename = f"env_train.json"
-    with open(filename, "w") as f:
-        json.dump(positions, f)
-    # print(f"Saved {len(positions)} positions to {filename}")
-    return filename
-
-def load_positions(filename):
-    try:
-        with open(filename, "r") as f:
-            positions = json.load(f)
-        # print(f"Loaded {len(positions)} positions from {filename}")
-        return positions
-    except FileNotFoundError:
-        print(f"File {filename} not found.")
-        return []
+def angle_norm(angle_rad):
+    if angle_rad > math.pi:
+        angle_rad -= 2*math.pi
+    elif angle_rad < -math.pi:
+        angle_rad += 2*math.pi
+    return angle_rad

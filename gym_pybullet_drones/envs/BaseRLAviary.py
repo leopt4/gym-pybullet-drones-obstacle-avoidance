@@ -64,7 +64,7 @@ class BaseRLAviary(BaseAviary):
 
         """
         #### Create a buffer for the last .5 sec of actions ########
-        self.ACTION_BUFFER_SIZE = int(ctrl_freq//2)
+        self.ACTION_BUFFER_SIZE = 0 #int(ctrl_freq//2)
         self.action_buffer = deque(maxlen=self.ACTION_BUFFER_SIZE)
         ####
         # vision_attributes = True if obs == ObservationType.RGB else False
@@ -93,7 +93,7 @@ class BaseRLAviary(BaseAviary):
                          )
         #### Set a limit on the maximum target speed ###############
         if act == ActionType.VEL:
-            self.SPEED_LIMIT = 0.2 * self.MAX_SPEED_KMH * (1000/3600)
+            self.SPEED_LIMIT = 0.03 * self.MAX_SPEED_KMH * (1000/3600)
 
     ################################################################################
 
@@ -149,7 +149,7 @@ class BaseRLAviary(BaseAviary):
             print("[ERROR] in BaseRLAviary._actionSpace()")
             exit()
         #### Set a limit on the maximum target speed ###############
-        self.SPEED_LIMIT = 0.2 * self.MAX_SPEED_KMH * (1000/3600)
+        self.SPEED_LIMIT = 0.1 * self.MAX_SPEED_KMH * (1000/3600)
         act_lower_bound = np.array([-self.SPEED_LIMIT*np.ones(size) for i in range(self.NUM_DRONES)])
         act_upper_bound = np.array([+self.SPEED_LIMIT*np.ones(size) for i in range(self.NUM_DRONES)])
         #
